@@ -1,0 +1,104 @@
+# Elpio admission webhook: server Deployment + Service, a cert-manager-issued
+# serving cert, and the MutatingWebhookConfiguration that defaults/validates
+# ElpioService objects. Requires cert-manager in the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elpio-webhook
+  namespace: elpio-system
+  labels:
+    app.kubernetes.io/managed-by: elpio
+    app: elpio-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elpio-webhook
+  template:
+    metadata:
+      labels:
+        app: elpio-webhook
+    spec:
+      serviceAccountName: elpio-operator
+      containers:
+        - name: webhook
+          image: ghcr.io/altikva/elpio:latest
+          command: ["uvicorn", "elpio.webhook.server:app", "--host", "0.0.0.0", "--port", "8443",
+                    "--ssl-keyfile", "/tls/tls.key", "--ssl-certfile", "/tls/tls.crt"]
+          env:
+            - name: ELPIO_ALLOWED_REGISTRIES
+              value: ""
+          ports:
+            - containerPort: 8443
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: elpio-webhook-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elpio-webhook
+  namespace: elpio-system
+spec:
+  selector:
+    app: elpio-webhook
+  ports:
+    - port: 443
+      targetPort: 8443
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: elpio-selfsigned
+  namespace: elpio-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: elpio-webhook-tls
+  namespace: elpio-system
+spec:
+  secretName: elpio-webhook-tls
+  dnsNames:
+    - elpio-webhook.elpio-system.svc
+    - elpio-webhook.elpio-system.svc.cluster.local
+  issuerRef:
+    name: elpio-selfsigned
+    kind: Issuer
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: elpio-service-defaults
+  annotations:
+    # cert-manager injects the CA bundle from the Certificate above.
+    cert-manager.io/inject-ca-from: elpio-system/elpio-webhook-tls
+webhooks:
+  - name: services.elpio.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: elpio-webhook
+        namespace: elpio-system
+        path: /mutate
+        port: 443
+    rules:
+      - apiGroups: ["elpio.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["elpioservices"]
+        scope: Namespaced
