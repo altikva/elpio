@@ -22,6 +22,7 @@ from pathlib import Path
 
 import click
 
+from elpio.banner import render_banner, render_landing
 from elpio.version import __version__
 
 
@@ -40,10 +41,23 @@ def _kubectl(*args: str) -> None:
         sys.exit(exc.returncode)
 
 
-@click.group()
+def _use_color() -> bool:
+    """Colour only for a real terminal, and honour the NO_COLOR convention."""
+    return sys.stderr.isatty() and not os.environ.get("NO_COLOR")
+
+
+@click.group(invoke_without_command=True)
 @click.version_option(__version__, prog_name="elpio")
-def main() -> None:
-    """Elpio — turn any Kubernetes cluster into a private serverless platform."""
+@click.pass_context
+def main(ctx: click.Context) -> None:
+    """Elpio: turn any Kubernetes cluster into a private serverless platform."""
+    # Banner goes to stderr so stdout stays clean for piping. A bare invocation
+    # shows the full landing screen and exits 0 (never "Missing command").
+    color = _use_color()
+    if ctx.invoked_subcommand is None:
+        click.echo(render_landing(__version__, color=color), err=True)
+        ctx.exit(0)
+    click.echo(render_banner(color=color), err=True)
 
 
 @main.command()
