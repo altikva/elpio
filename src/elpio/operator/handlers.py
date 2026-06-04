@@ -1,10 +1,18 @@
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-06-04
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: kopf handlers for ``ElpioService``.
+
 """kopf handlers for ``ElpioService``.
 
 Reconciliation is declarative: parse the CR spec, render engine objects, and
 server-side apply them with the ElpioService as their owner — so Kubernetes
 garbage-collects the children when the ElpioService is deleted (no explicit
-teardown handler needed). This is the operator model that replaces A4C's
-imperative ``kubectl apply`` over SSH (RFC 0001 §4.1).
+teardown handler needed). This is a declarative operator model: continuous
+reconciliation rather than one-shot, imperative ``kubectl apply``.
 """
 
 from __future__ import annotations
@@ -58,3 +66,12 @@ def reconcile(spec, meta, name, namespace, patch, logger, **_):
 def on_delete(name, namespace, logger, **_):
     # Children are garbage-collected via ownerReferences; just log intent.
     logger.info("deleting ElpioService %s/%s (children GC via owner refs)", namespace, name)
+
+
+# Importing these modules registers their kopf handlers when the operator loads
+# this entrypoint (`kopf run -m elpio.operator.handlers`).
+from elpio.operator import (  # noqa: E402,F401
+    function_handlers,
+    task_handlers,
+    tenant_handlers,
+)
