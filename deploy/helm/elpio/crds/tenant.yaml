@@ -1,0 +1,97 @@
+# ElpioTenant — a Namespace plus its guardrails (RBAC, quota, isolation, secrets).
+# Cluster-scoped: it owns the Namespace it creates, so deleting the Tenant GCs
+# the namespace and everything in it via ownerReferences.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: elpiotenants.elpio.io
+spec:
+  group: elpio.io
+  scope: Cluster
+  names:
+    kind: ElpioTenant
+    plural: elpiotenants
+    singular: elpiotenant
+    shortNames:
+      - etenant
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Namespace
+          type: string
+          jsonPath: .status.namespace
+        - name: Ready
+          type: string
+          jsonPath: .status.ready
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              properties:
+                namespace:
+                  type: string
+                  description: Namespace to create. Defaults to the Tenant name.
+                labels:
+                  type: object
+                  additionalProperties: { type: string }
+                rbac:
+                  type: object
+                  properties:
+                    role:
+                      type: string
+                      enum: [admin, edit, view]
+                      default: edit
+                    users:
+                      type: array
+                      items: { type: string }
+                    groups:
+                      type: array
+                      items: { type: string }
+                    serviceAccounts:
+                      type: array
+                      items: { type: string }
+                resourceQuota:
+                  type: object
+                  properties:
+                    cpu: { type: string }
+                    memory: { type: string }
+                    pods: { type: integer }
+                limits:
+                  type: object
+                  properties:
+                    defaultCpu: { type: string, default: "500m" }
+                    defaultMemory: { type: string, default: "256Mi" }
+                    defaultRequestCpu: { type: string, default: "100m" }
+                    defaultRequestMemory: { type: string, default: "128Mi" }
+                networkIsolation: { type: boolean, default: true }
+                serviceAccount:
+                  type: string
+                  description: Bound ServiceAccount name. Defaults to "<tenant>-sa".
+                secrets:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string }
+                      data:
+                        type: object
+                        additionalProperties: { type: string }
+                      reflect: { type: boolean, default: false }
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                ready: { type: boolean }
+                namespace: { type: string }
+                observedGeneration: { type: integer }

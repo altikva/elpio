@@ -1,11 +1,17 @@
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-06-04
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: Elpio — turn any Kubernetes cluster into a private serverless
+#              platform.
+
 """Elpio — turn any Kubernetes cluster into a private serverless platform.
 
-Elpio is the open-source incarnation of A4C (API For Cloud), an Altikva product.
-It ships a Kubernetes operator + CRDs (``ElpioService`` / ``ElpioFunction`` /
+Elpio ships a Kubernetes operator + CRDs (``ElpioService`` / ``ElpioFunction`` /
 ``ElpioTask``) that reconcile a declarative spec onto a serverless engine
 (Knative Serving by default, KEDA as a lighter-weight alternative).
-
-See ``docs/rfc/0001-elpio-private-serverless-platform.md`` for the architecture.
 """
 
 from elpio.version import __version__

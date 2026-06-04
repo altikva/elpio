@@ -1,11 +1,17 @@
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-06-04
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: ``ElpioService`` spec — the Cloud Run-equivalent object.
+
 """``ElpioService`` spec — the Cloud Run-equivalent object.
 
-Ported and evolved from A4C's ``src/schemas/api_schema.py`` (``ApiModel``/
-``DeployConfig``), stripped of GCP-specific fields and re-centred on serverless
-semantics: scale-to-zero by default, concurrency-driven autoscaling, and a
-portable ingress model. This Pydantic model is the in-process mirror of the
-``ElpioService`` CRD schema in ``deploy/crds/elpioservice.yaml`` — keep the two
-in sync.
+Re-centred on serverless semantics: scale-to-zero by default, concurrency-driven
+autoscaling, and a portable ingress model. This Pydantic model is the in-process
+mirror of the ``ElpioService`` CRD schema in ``deploy/crds/elpioservice.yaml`` —
+keep the two in sync.
 """
 
 from __future__ import annotations
