@@ -82,9 +82,17 @@ spec:
                 https://*) ;;
                 *) echo "ARCHIVE must be an https:// URL" >&2; exit 1 ;;
               esac
-              apk add --no-cache curl tar
-              curl -fsSL "$ARCHIVE_URL" -o /tmp/src.tgz
-              tar -xzf /tmp/src.tgz -C "$(workspaces.output.path)"
+              apk add --no-cache curl tar unzip
+              dest="$(workspaces.output.path)"
+              curl -fsSL "$ARCHIVE_URL" -o /tmp/src.archive
+              case "$ARCHIVE_URL" in
+                *.tar.gz|*.tgz)   tar -xzf /tmp/src.archive -C "$dest" ;;
+                *.tar.bz2|*.tbz2) tar -xjf /tmp/src.archive -C "$dest" ;;
+                *.tar.xz|*.txz)   tar -xJf /tmp/src.archive -C "$dest" ;;
+                *.tar)            tar -xf  /tmp/src.archive -C "$dest" ;;
+                *.zip)            unzip -q /tmp/src.archive -d "$dest" ;;
+                *) echo "unsupported archive format: $ARCHIVE_URL" >&2; exit 1 ;;
+              esac
     - name: build
       runAfter: [fetch-git, fetch-archive]
       taskRef:

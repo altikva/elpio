@@ -33,9 +33,9 @@ tasks:
       - python hack/apply_headers.py
 
   unit:
-    desc: Run unit tests (no cluster needed)
+    desc: Run unit tests (no cluster or brokers needed)
     cmds:
-      - pytest -m "not e2e"
+      - pytest -m "not e2e and not integration"
 
   test:
     desc: Alias for unit tests
@@ -47,6 +47,13 @@ tasks:
       ELPIO_E2E: '1'
     cmds:
       - pytest -m e2e
+
+  integration:
+    desc: Run broker integration tests (needs redis/rabbitmq/nats)
+    env:
+      ELPIO_INTEGRATION: '1'
+    cmds:
+      - pytest -m integration
 
   crds:
     desc: Apply the CRDs to the current kube-context

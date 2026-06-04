@@ -45,3 +45,34 @@ jobs:
       - uses: azure/setup-helm@v4
       - run: helm lint deploy/helm/elpio
       - run: helm template elpio deploy/helm/elpio --namespace elpio-system >/dev/null
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 5
+      rabbitmq:
+        image: rabbitmq:3
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # NATS needs JetStream (-js), which service containers can't pass; run it directly.
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2 -js
+          sleep 3
+      - run: pip install -e '.[dev,dispatcher]'
+      - name: Run integration tests
+        env:
+          ELPIO_INTEGRATION: "1"
+        run: pytest -m integration
