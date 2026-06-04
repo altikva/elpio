@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elpio-operator
+  namespace: elpio-system
+  labels:
+    app.kubernetes.io/name: elpio-operator
+    app.kubernetes.io/managed-by: elpio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elpio-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: elpio-operator
+    spec:
+      serviceAccountName: elpio-operator
+      containers:
+        - name: operator
+          image: ghcr.io/altikva/elpio/operator:latest
+          imagePullPolicy: IfNotPresent
+          command: ["elpio", "operator"]
+          env:
+            # Serving engine: "knative" (default) or "keda".
+            - name: ELPIO_ENGINE
+              value: "knative"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
