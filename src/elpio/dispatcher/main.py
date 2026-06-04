@@ -31,12 +31,9 @@ def build_from_env() -> Dispatcher:
     rate_raw = os.getenv("ELPIO_RATE_LIMIT")
     rate = int(rate_raw) if rate_raw else None
 
-    if broker_type != "redis":
-        raise SystemExit(f"dispatcher: broker {broker_type!r} not yet implemented (redis only)")
+    from elpio.dispatcher.brokers import make_broker
 
-    from elpio.dispatcher.brokers import RedisBroker
-
-    broker = RedisBroker(address, queue)
+    broker = make_broker(broker_type, address, queue, dlq=os.getenv("ELPIO_DLQ"))
     return Dispatcher(broker, handler, max_attempts=max_attempts, rate_limit=rate)
 
 

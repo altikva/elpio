@@ -42,8 +42,15 @@ def test_pipeline_declares_every_param_the_render_can_send():
     assert not missing, f"PipelineRun would send undeclared params: {missing}"
 
 
-def test_pipeline_has_clone_then_build():
-    tasks = [t["name"] for t in PIPELINE["spec"]["tasks"]]
-    assert tasks == ["fetch", "build"]
-    build = next(t for t in PIPELINE["spec"]["tasks"] if t["name"] == "build")
-    assert build["runAfter"] == ["fetch"]
+def test_pipeline_has_git_and_archive_fetch_then_build():
+    tasks = {t["name"]: t for t in PIPELINE["spec"]["tasks"]}
+    assert set(tasks) == {"fetch-git", "fetch-archive", "build"}
+    assert tasks["build"]["runAfter"] == ["fetch-git", "fetch-archive"]
+
+
+def test_fetch_tasks_are_gated_on_their_source():
+    tasks = {t["name"]: t for t in PIPELINE["spec"]["tasks"]}
+    git_when = tasks["fetch-git"]["when"][0]["input"]
+    arch_when = tasks["fetch-archive"]["when"][0]["input"]
+    assert git_when == "$(params.SOURCE_URL)"
+    assert arch_when == "$(params.SOURCE_ARCHIVE)"

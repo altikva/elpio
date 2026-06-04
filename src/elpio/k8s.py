@@ -17,10 +17,13 @@ is idempotent and field-ownership is tracked under the ``elpio`` field manager.
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Any, Dict, Optional
 
 from kubernetes import config, dynamic
 from kubernetes.client import api_client
+
+logger = logging.getLogger("elpio.k8s")
 
 
 @functools.lru_cache(maxsize=1)
@@ -45,6 +48,56 @@ def client_for(context: Optional[str] = None) -> "dynamic.DynamicClient":
         return client()
     config.load_kube_config(context=context)
     return dynamic.DynamicClient(api_client.ApiClient())
+
+
+def connection_kind(record: Optional[Dict[str, Any]]) -> str:
+    """How to reach a cluster from its registry record: ``token`` or ``context``."""
+    record = record or {}
+    if record.get("server") and record.get("token"):
+        return "token"
+    return "context"
+
+
+@functools.lru_cache(maxsize=None)
+def _client_from_token(
+    server: str, token: str, ca_cert: Optional[str] = None, insecure: bool = False
+) -> "dynamic.DynamicClient":
+    import tempfile
+
+    from kubernetes import client as kclient
+
+    cfg = kclient.Configuration()
+    cfg.host = server
+    cfg.api_key = {"authorization": token}
+    cfg.api_key_prefix = {"authorization": "Bearer"}
+    if ca_cert:
+        handle = tempfile.NamedTemporaryFile("w", suffix=".crt", delete=False)
+        handle.write(ca_cert)
+        handle.close()
+        cfg.ssl_ca_cert = handle.name
+    elif insecure:
+        # Explicit opt-in only (local/dev). Never the silent default.
+        logger.warning("TLS verification disabled for %s (insecure=true)", server)
+        cfg.verify_ssl = False
+    else:
+        # No CA given: verify against the system trust store.
+        cfg.verify_ssl = True
+    return dynamic.DynamicClient(api_client.ApiClient(cfg))
+
+
+def client_for_record(record: Optional[Dict[str, Any]]) -> "dynamic.DynamicClient":
+    """Resolve a client from a fleet-registry cluster record.
+
+    A record with ``server`` + ``token`` (and optional ``ca``) connects directly;
+    otherwise it falls back to the kubeconfig ``context`` (or the default client).
+    Set ``insecure: true`` on the record to skip TLS verification (dev only).
+    """
+    record = record or {}
+    if connection_kind(record) == "token":
+        return _client_from_token(
+            record["server"], record["token"], record.get("ca"), bool(record.get("insecure"))
+        )
+    return client_for(record.get("context"))
 
 
 def get_object(
