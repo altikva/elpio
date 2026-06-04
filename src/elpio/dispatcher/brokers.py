@@ -25,6 +25,7 @@ class MemoryBroker(Broker):
         self._queue: List[Message] = list(messages or [])
         self.acked: List[Message] = []
         self.requeued: List[Message] = []
+        self.dead: List[Message] = []
 
     def poll(self) -> Optional[Message]:
         return self._queue.pop(0) if self._queue else None
@@ -37,16 +38,24 @@ class MemoryBroker(Broker):
             self._queue.append(msg)
             self.requeued.append(msg)
 
+    def dead_letter(self, msg: Message) -> None:
+        self.dead.append(msg)
+
 
 class RedisBroker(Broker):
-    """A Redis list as a FIFO queue (LPOP to consume, RPUSH to requeue)."""
+    """A Redis list as a FIFO queue (LPOP to consume, RPUSH to requeue).
 
-    def __init__(self, address: str, queue: str) -> None:
+    Messages that exhaust their retries are RPUSHed to a dead-letter list
+    (``dlq``, defaulting to ``"<queue>:dead"``) instead of being dropped.
+    """
+
+    def __init__(self, address: str, queue: str, dlq: Optional[str] = None) -> None:
         import redis
 
         host, _, port = address.partition(":")
         self._client = redis.Redis(host=host, port=int(port or 6379))
         self._queue = queue
+        self._dlq = dlq or f"{queue}:dead"
         self._seq = 0
 
     def poll(self) -> Optional[Message]:
@@ -63,3 +72,6 @@ class RedisBroker(Broker):
     def nack(self, msg: Message, requeue: bool = True) -> None:
         if requeue:
             self._client.rpush(self._queue, json.dumps(msg.body))
+
+    def dead_letter(self, msg: Message) -> None:
+        self._client.rpush(self._dlq, json.dumps(msg.body))

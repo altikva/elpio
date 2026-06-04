@@ -36,7 +36,7 @@ def build_from_env() -> Dispatcher:
 
     from elpio.dispatcher.brokers import RedisBroker
 
-    broker = RedisBroker(address, queue)
+    broker = RedisBroker(address, queue, dlq=os.getenv("ELPIO_DLQ"))
     return Dispatcher(broker, handler, max_attempts=max_attempts, rate_limit=rate)
 
 
