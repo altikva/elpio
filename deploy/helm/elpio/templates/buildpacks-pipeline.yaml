@@ -1,0 +1,109 @@
+{{- if .Values.functions.enabled }}
+# The elpio-buildpacks Pipeline ElpioFunction binds to. Canonical source:
+# deploy/tekton/buildpacks-pipeline.yaml. Requires Tekton Pipelines in cluster.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: elpio-buildpacks
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+spec:
+  params:
+    - name: SOURCE_URL
+      type: string
+      default: ""
+    - name: SOURCE_REVISION
+      type: string
+      default: main
+    - name: SOURCE_SUBPATH
+      type: string
+      default: ""
+    - name: SOURCE_ARCHIVE
+      type: string
+      default: ""
+    - name: APP_IMAGE
+      type: string
+    - name: BUILDER_IMAGE
+      type: string
+      default: paketobuildpacks/builder-jammy-base
+  workspaces:
+    - name: source
+  tasks:
+    - name: fetch-git
+      when:
+        - input: $(params.SOURCE_URL)
+          operator: notin
+          values: [""]
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: version
+            value: "0.9"
+      params:
+        - name: url
+          value: $(params.SOURCE_URL)
+        - name: revision
+          value: $(params.SOURCE_REVISION)
+      workspaces:
+        - name: output
+          workspace: source
+    - name: fetch-archive
+      when:
+        - input: $(params.SOURCE_ARCHIVE)
+          operator: notin
+          values: [""]
+      params:
+        - name: ARCHIVE
+          value: $(params.SOURCE_ARCHIVE)
+      workspaces:
+        - name: output
+          workspace: source
+      taskSpec:
+        params:
+          - name: ARCHIVE
+            type: string
+        workspaces:
+          - name: output
+        steps:
+          - name: download
+            image: docker.io/library/alpine:3.20
+            env:
+              - name: ARCHIVE_URL
+                value: $(params.ARCHIVE)
+            script: |
+              #!/bin/sh
+              set -eu
+              case "$ARCHIVE_URL" in
+                https://*) ;;
+                *) echo "ARCHIVE must be an https:// URL" >&2; exit 1 ;;
+              esac
+              apk add --no-cache curl tar
+              curl -fsSL "$ARCHIVE_URL" -o /tmp/src.tgz
+              tar -xzf /tmp/src.tgz -C "$(workspaces.output.path)"
+    - name: build
+      runAfter: [fetch-git, fetch-archive]
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildpacks
+          - name: version
+            value: "0.5"
+      params:
+        - name: APP_IMAGE
+          value: $(params.APP_IMAGE)
+        - name: BUILDER_IMAGE
+          value: $(params.BUILDER_IMAGE)
+        - name: SOURCE_SUBPATH
+          value: $(params.SOURCE_SUBPATH)
+      workspaces:
+        - name: source
+          workspace: source
+{{- end }}
