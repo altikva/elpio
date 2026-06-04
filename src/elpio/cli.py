@@ -1,9 +1,16 @@
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-06-04
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: ``elpio`` CLI.
+
 """``elpio`` CLI.
 
 A thin, kubeconfig-driven client: it authors CRs and shells out to ``kubectl``
-for cluster operations (the same model every k8s CLI uses). Unlike A4C's
-``client.py``, it never SSHes into an admin VM — all mutation happens in-cluster
-via the operator.
+for cluster operations (the same model every k8s CLI uses). It never SSHes into
+an admin VM — all mutation happens in-cluster via the operator.
 """
 
 from __future__ import annotations
