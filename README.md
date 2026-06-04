@@ -10,8 +10,7 @@ Elpio is an [Altikva](https://altikva.com) open-source product (MIT for code, CC
 docs). The name is a coined mark rooted in Greek *elpis* ("hope") — part of the Altikva family
 lineage *ha-tikva* (Hebrew) → *Spero* (Latin) → *Elpio*.
 
-> **Status: alpha (v0.1.0).** This is an early Phase 0/1 scaffold (per
-> [RFC 0001](docs/rfc/0001-elpio-private-serverless-platform.md)). The `ElpioService` reconciler
+> **Status: alpha (v0.1.0).** This is an early Phase 0/1 scaffold. The `ElpioService` reconciler
 > works against Knative/KEDA; `ElpioFunction` and `ElpioTask` are stubs.
 
 ## Why
@@ -62,16 +61,16 @@ elpio services
 Run the operator locally instead of in-cluster:
 
 ```bash
-make operator-run        # kopf run -m elpio.operator.handlers
+task operator-run        # kopf run -m elpio.operator.handlers
 ```
 
 ## Development
 
 ```bash
-make dev      # editable install + dev deps
-make unit     # unit tests (no cluster)
-make lint     # ruff
-make e2e      # end-to-end (needs a kind cluster + Knative/KEDA)
+task dev      # editable install + dev deps
+task unit     # unit tests (no cluster)
+task lint     # ruff
+task e2e      # end-to-end (needs a kind cluster + Knative/KEDA)
 ```
 
 ## Layout

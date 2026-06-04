@@ -1,3 +1,11 @@
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-06-04
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: KEDA engine — the lighter-weight alternative to Knative.
+
 """KEDA engine — the lighter-weight alternative to Knative.
 
 Renders a plain Deployment + Service + KEDA ScaledObject. This is the
@@ -5,7 +13,7 @@ incremental path for clusters that don't want the full Knative networking layer.
 
 NOTE: a CPU/memory trigger cannot scale to zero. True request-driven
 scale-to-zero with KEDA needs the **keda-http-add-on** (an HTTPScaledObject +
-interceptor). That is tracked for Phase 1 of the bake-off (RFC 0001 §4.3); this
+interceptor). That is tracked for Phase 1 of the bake-off; this
 renderer currently emits a CPU-triggered ScaledObject as the portable baseline.
 """
 

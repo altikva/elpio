@@ -1,0 +1,53 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+    app: elpio-api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      app: elpio-api
+  template:
+    metadata:
+      labels:
+        app: elpio-api
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: api
+          image: {{ include "elpio.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uvicorn", "elpio.api.app:app", "--host", "0.0.0.0", "--port", "8080"]
+          env:
+            - name: ELPIO_OIDC_JWKS_URI
+              value: {{ .Values.api.oidc.jwksUri | quote }}
+            - name: ELPIO_OIDC_ISSUER
+              value: {{ .Values.api.oidc.issuer | quote }}
+            - name: ELPIO_OIDC_AUDIENCE
+              value: {{ .Values.api.oidc.audience | quote }}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: elpio-api
+  ports:
+    - port: 80
+      targetPort: 8080
+{{- end }}

@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+    app: elpio-operator
+spec:
+  replicas: {{ .Values.operator.replicaCount }}
+  selector:
+    matchLabels:
+      app: elpio-operator
+  template:
+    metadata:
+      labels:
+        app: elpio-operator
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: operator
+          image: {{ include "elpio.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["operator"]
+          env:
+            - name: ELPIO_ENGINE
+              value: {{ .Values.engine | quote }}
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}

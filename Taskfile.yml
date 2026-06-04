@@ -1,0 +1,83 @@
+# Taskfile for Elpio — run `task --list` to see available tasks.
+# https://taskfile.dev
+version: '3'
+
+vars:
+  KIND_CLUSTER: '{{.KIND_CLUSTER | default "elpio-dev"}}'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  install:
+    desc: Install the package
+    cmds:
+      - pip install -e .
+
+  dev:
+    desc: Install with dev extras
+    cmds:
+      - pip install -e '.[dev]'
+
+  lint:
+    desc: Lint with ruff
+    cmds:
+      - ruff check src tests
+
+  unit:
+    desc: Run unit tests (no cluster needed)
+    cmds:
+      - pytest -m "not e2e"
+
+  test:
+    desc: Alias for unit tests
+    deps: [unit]
+
+  e2e:
+    desc: Run e2e tests (needs a kind cluster + Knative/KEDA)
+    env:
+      ELPIO_E2E: '1'
+    cmds:
+      - pytest -m e2e
+
+  crds:
+    desc: Apply the CRDs to the current kube-context
+    cmds:
+      - kubectl apply -f deploy/crds
+
+  knative-install:
+    desc: Install Knative Serving (+ Kourier) and KEDA into the current context
+    cmds:
+      - bash hack/install-knative.sh
+
+  e2e-up:
+    desc: Provision kind + Knative/KEDA + Elpio CRDs, ready for `task e2e`
+    cmds:
+      - task: kind-up
+      - task: knative-install
+      - kubectl apply -f deploy/crds
+      - kubectl apply -f deploy/operator
+
+  operator-run:
+    desc: Run the operator locally against the current kube-context
+    cmds:
+      - kopf run -m elpio.operator.handlers
+
+  kind-up:
+    desc: Create a local kind cluster
+    cmds:
+      - kind create cluster --name {{.KIND_CLUSTER}} --config tests/e2e/kind-config.yaml
+
+  kind-down:
+    desc: Delete the local kind cluster
+    cmds:
+      - kind delete cluster --name {{.KIND_CLUSTER}}
+
+  clean:
+    desc: Remove build/test artefacts
+    cmds:
+      - rm -rf build dist *.egg-info .pytest_cache
+      - find . -name __pycache__ -type d -prune -exec rm -rf {} +

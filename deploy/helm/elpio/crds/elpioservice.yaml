@@ -1,0 +1,107 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: elpioservices.elpio.io
+spec:
+  group: elpio.io
+  scope: Namespaced
+  names:
+    kind: ElpioService
+    plural: elpioservices
+    singular: elpioservice
+    shortNames:
+      - esvc
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: string
+          jsonPath: .status.ready
+        - name: Engine
+          type: string
+          jsonPath: .status.engine
+        - name: URL
+          type: string
+          jsonPath: .status.url
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  description: Container image (object or "repo:tag" string).
+                  type: object
+                  required: [repository]
+                  properties:
+                    repository: { type: string }
+                    tag: { type: string }
+                port:
+                  type: integer
+                  default: 8080
+                env:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, value]
+                    properties:
+                      name: { type: string }
+                      value: { type: string }
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu: { type: string }
+                        memory: { type: string }
+                    limits:
+                      type: object
+                      properties:
+                        cpu: { type: string }
+                        memory: { type: string }
+                readinessProbe:
+                  type: object
+                  properties:
+                    path: { type: string, default: "/" }
+                    initialDelaySeconds: { type: integer }
+                    periodSeconds: { type: integer }
+                scaling:
+                  type: object
+                  description: Cloud Run-style autoscaling. Defaults to scale-to-zero.
+                  properties:
+                    minScale: { type: integer, default: 0 }
+                    maxScale: { type: integer, default: 0 }
+                    target: { type: integer, default: 100 }
+                    metric:
+                      type: string
+                      enum: [concurrency, rps, cpu]
+                      default: concurrency
+                ingress:
+                  type: object
+                  properties:
+                    enabled: { type: boolean, default: true }
+                    visibility:
+                      type: string
+                      enum: [external, cluster-local]
+                      default: external
+                    host: { type: string }
+                serviceAccount: { type: string }
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                ready: { type: boolean }
+                engine: { type: string }
+                url: { type: string }
+                observedGeneration: { type: integer }

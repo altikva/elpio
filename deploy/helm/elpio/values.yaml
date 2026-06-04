@@ -1,0 +1,40 @@
+# Default values for the Elpio chart.
+
+# Serving engine the operator renders to: "knative" (default) or "keda".
+engine: knative
+
+image:
+  repository: ghcr.io/altikva/elpio
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+operator:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Admission webhook (defaults ElpioService to scale-to-zero, enforces image
+# policy). Requires cert-manager in the cluster.
+webhook:
+  enabled: true
+  allowedRegistries: ""   # comma-separated; empty = allow all
+
+# Management API / fleet tier (FastAPI). Off by default.
+api:
+  enabled: false
+  replicaCount: 1
+  oidc:
+    jwksUri: ""
+    issuer: ""
+    audience: ""
+
+rbac:
+  create: true
+
+serviceAccount:
+  name: elpio-operator
