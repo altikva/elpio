@@ -1,0 +1,75 @@
+# ElpioTask — durable queue with retries/scheduling (Cloud Tasks equivalent).
+# Reconciles to a dispatcher Deployment scaled by KEDA off a broker queue
+# (NATS/Redis/RabbitMQ), plus an optional CronJob for scheduled dispatch.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: elpiotasks.elpio.io
+spec:
+  group: elpio.io
+  scope: Namespaced
+  names:
+    kind: ElpioTask
+    plural: elpiotasks
+    singular: elpiotask
+    shortNames:
+      - etask
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Queue
+          type: string
+          jsonPath: .status.queue
+        - name: Ready
+          type: string
+          jsonPath: .status.ready
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [broker, queue, handlerService]
+              properties:
+                broker:
+                  type: object
+                  required: [address]
+                  properties:
+                    type:
+                      type: string
+                      enum: [nats, redis, rabbitmq]
+                      default: nats
+                    address: { type: string }
+                queue: { type: string }
+                handlerService:
+                  type: string
+                  description: Name of an ElpioService that handles dequeued tasks.
+                rateLimit: { type: integer }
+                retry:
+                  type: object
+                  properties:
+                    maxAttempts: { type: integer, default: 3 }
+                schedule:
+                  type: string
+                  description: Optional cron schedule for periodic dispatch.
+                minReplicas: { type: integer, default: 0 }
+                maxReplicas: { type: integer, default: 10 }
+                dispatcherImage:
+                  type: string
+                  default: ghcr.io/altikva/elpio-dispatcher:latest
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                ready: { type: boolean }
+                queue: { type: string }
+                scheduled: { type: boolean }
+                observedGeneration: { type: integer }
