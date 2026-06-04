@@ -34,7 +34,12 @@ spec:
   workspaces:
     - name: source
   tasks:
-    - name: fetch
+    # Git path: runs only when SOURCE_URL is set.
+    - name: fetch-git
+      when:
+        - input: $(params.SOURCE_URL)
+          operator: notin
+          values: [""]
       taskRef:
         resolver: hub
         params:
@@ -52,8 +57,46 @@ spec:
       workspaces:
         - name: output
           workspace: source
+    # Archive path: runs only when SOURCE_ARCHIVE is set. Downloads + unpacks a
+    # tarball into the source workspace.
+    - name: fetch-archive
+      when:
+        - input: $(params.SOURCE_ARCHIVE)
+          operator: notin
+          values: [""]
+      params:
+        - name: ARCHIVE
+          value: $(params.SOURCE_ARCHIVE)
+      workspaces:
+        - name: output
+          workspace: source
+      taskSpec:
+        params:
+          - name: ARCHIVE
+            type: string
+        workspaces:
+          - name: output
+        steps:
+          - name: download
+            image: docker.io/library/alpine:3.20
+            # Pass the (user-controlled) URL via env so the shell treats it as
+            # data, never code. Only https sources are accepted.
+            env:
+              - name: ARCHIVE_URL
+                value: $(params.ARCHIVE)
+            script: |
+              #!/bin/sh
+              set -eu
+              case "$ARCHIVE_URL" in
+                https://*) ;;
+                *) echo "ARCHIVE must be an https:// URL" >&2; exit 1 ;;
+              esac
+              apk add --no-cache curl tar
+              curl -fsSL "$ARCHIVE_URL" -o /tmp/src.tgz
+              tar -xzf /tmp/src.tgz -C "$(workspaces.output.path)"
     - name: build
-      runAfter: [fetch]
+      # Skipped fetch tasks don't block; build runs after whichever fetched.
+      runAfter: [fetch-git, fetch-archive]
       taskRef:
         resolver: hub
         params:
