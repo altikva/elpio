@@ -6,7 +6,13 @@
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Unit tests for the function render.
 
-from elpio.function import render_function
+from elpio.function import (
+    next_action,
+    pipelinerun_phase,
+    render_function,
+    render_pipeline_run,
+    render_service,
+)
 from elpio.models.function import FunctionSpec
 
 SPEC = FunctionSpec.from_cr(
@@ -60,3 +66,27 @@ def test_owner_propagates():
     owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioFunction", "name": "fn", "uid": "u"}
     objs = render_function("fn", "demo", SPEC, owner=owner)
     assert all(o["metadata"]["ownerReferences"] == [owner] for o in objs)
+
+
+def test_split_renders_match_combined():
+    owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioFunction", "name": "fn", "uid": "u"}
+    pr = render_pipeline_run("fn", "demo", SPEC, owner)
+    svc = render_service("fn", "demo", SPEC, owner)
+    assert pr["kind"] == "PipelineRun" and svc["kind"] == "ElpioService"
+    assert render_function("fn", "demo", SPEC, owner) == [pr, svc]
+
+
+def test_pipelinerun_phase_from_conditions():
+    assert pipelinerun_phase(None) == "Pending"
+    assert pipelinerun_phase({}) == "Pending"
+    assert pipelinerun_phase({"conditions": [{"type": "Succeeded", "status": "Unknown"}]}) == "Running"
+    assert pipelinerun_phase({"conditions": [{"type": "Succeeded", "status": "True"}]}) == "Succeeded"
+    assert pipelinerun_phase({"conditions": [{"type": "Succeeded", "status": "False"}]}) == "Failed"
+
+
+def test_next_action_gating():
+    assert next_action("Pending", False) == "wait"
+    assert next_action("Running", False) == "wait"
+    assert next_action("Succeeded", False) == "apply"
+    assert next_action("Succeeded", True) == "noop"
+    assert next_action("Failed", False) == "fail"

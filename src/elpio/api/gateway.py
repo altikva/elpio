@@ -80,14 +80,28 @@ class InMemoryCRGateway(CRGateway):
 class KubeCRGateway(CRGateway):
     """Real gateway: server-side applies CRs via the Kubernetes API.
 
-    This skeleton targets the current kube-context; per-cluster kubeconfig
-    selection is the multi-cluster follow-up.
+    Each registered cluster carries a kubeconfig ``context`` (set when it was
+    registered); the gateway resolves a client for that context so it authors
+    CRs against the right cluster in the fleet. ``client_factory`` maps a context
+    name to a DynamicClient and is injectable for tests.
     """
 
-    def list_services(self, cluster: str, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
-        from elpio.k8s import client
+    def __init__(self, registry: FleetRegistry, client_factory=None) -> None:
+        self._registry = registry
+        if client_factory is None:
+            from elpio.k8s import client_for
 
-        api = client().resources.get(api_version="elpio.io/v1alpha1", kind="ElpioService")
+            client_factory = client_for
+        self._client_factory = client_factory
+
+    def _client(self, cluster: str):
+        record = self._registry.get(cluster) or {}
+        return self._client_factory(record.get("context"))
+
+    def list_services(self, cluster: str, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        api = self._client(cluster).resources.get(
+            api_version="elpio.io/v1alpha1", kind="ElpioService"
+        )
         return api.get(namespace=namespace).to_dict().get("items", [])
 
     def apply_service(
@@ -101,5 +115,5 @@ class KubeCRGateway(CRGateway):
             "metadata": {"name": name, "namespace": namespace},
             "spec": spec,
         }
-        apply_object(obj)
+        apply_object(obj, dyn=self._client(cluster))
         return obj
