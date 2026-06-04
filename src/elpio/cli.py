@@ -1,0 +1,97 @@
+"""``elpio`` CLI.
+
+A thin, kubeconfig-driven client: it authors CRs and shells out to ``kubectl``
+for cluster operations (the same model every k8s CLI uses). Unlike A4C's
+``client.py``, it never SSHes into an admin VM — all mutation happens in-cluster
+via the operator.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import click
+
+from elpio.version import __version__
+
+
+def _repo_deploy_dir() -> Path:
+    """Locate the bundled ``deploy/`` dir when running from a source checkout."""
+    return Path(__file__).resolve().parents[2] / "deploy"
+
+
+def _kubectl(*args: str) -> None:
+    try:
+        subprocess.run(["kubectl", *args], check=True)
+    except FileNotFoundError:
+        click.echo("error: kubectl not found in PATH", err=True)
+        sys.exit(1)
+    except subprocess.CalledProcessError as exc:
+        sys.exit(exc.returncode)
+
+
+@click.group()
+@click.version_option(__version__, prog_name="elpio")
+def main() -> None:
+    """Elpio — turn any Kubernetes cluster into a private serverless platform."""
+
+
+@main.command()
+def version() -> None:
+    """Print the Elpio version."""
+    click.echo(__version__)
+
+
+@main.command()
+@click.option(
+    "--manifests",
+    type=click.Path(exists=True, file_okay=False),
+    default=None,
+    help="Path to the deploy/ dir (defaults to the source checkout).",
+)
+def install(manifests: str | None) -> None:
+    """Install Elpio CRDs + operator into the current kube-context."""
+    deploy = Path(manifests) if manifests else _repo_deploy_dir()
+    _kubectl("apply", "-f", str(deploy / "crds"))
+    _kubectl("apply", "-f", str(deploy / "operator"))
+    click.echo("elpio: CRDs + operator applied")
+
+
+@main.command()
+@click.option(
+    "-f",
+    "--file",
+    "file",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+    help="ElpioService (or other Elpio CR) YAML to apply.",
+)
+def deploy(file: str) -> None:
+    """Create/update an ElpioService from a YAML file."""
+    _kubectl("apply", "-f", file)
+
+
+@main.command()
+@click.option("-n", "--namespace", default=None, help="Limit to one namespace.")
+def services(namespace: str | None) -> None:
+    """List ElpioServices."""
+    args = ["get", "elpioservices.elpio.io"]
+    args += ["-n", namespace] if namespace else ["-A"]
+    _kubectl(*args)
+
+
+@main.command(
+    context_settings={"ignore_unknown_options": True},
+    short_help="Run the Elpio operator (kopf) in the foreground.",
+)
+@click.argument("kopf_args", nargs=-1, type=click.UNPROCESSED)
+def operator(kopf_args: tuple[str, ...]) -> None:
+    """Run the operator. Extra args are passed through to ``kopf run``."""
+    os.execvp("kopf", ["kopf", "run", "-m", "elpio.operator.handlers", *kopf_args])
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,25 @@
+# A minimal ElpioService: an echo server that scales to zero.
+#   elpio deploy -f examples/hello.yaml
+#   elpio services
+apiVersion: elpio.io/v1alpha1
+kind: ElpioService
+metadata:
+  name: hello
+  namespace: default
+spec:
+  image:
+    repository: ghcr.io/knative/helloworld-go
+    tag: latest
+  port: 8080
+  env:
+    - name: TARGET
+      value: "Elpio"
+  scaling:
+    minScale: 0        # scale to zero when idle
+    maxScale: 10
+    target: 100        # 100 concurrent requests per replica
+    metric: concurrency
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"

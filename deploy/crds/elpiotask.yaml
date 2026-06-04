@@ -1,0 +1,45 @@
+# ElpioTask — durable queue with retries/scheduling (Cloud Tasks equivalent). Phase 3.
+# Stub CRD: reconciles to a KEDA ScaledObject bound to a broker (NATS/Redis/RabbitMQ)
+# plus a dispatcher. Replaces A4C's in-process apscheduler. Schema permissive for now.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: elpiotasks.elpio.io
+spec:
+  group: elpio.io
+  scope: Namespaced
+  names:
+    kind: ElpioTask
+    plural: elpiotasks
+    singular: elpiotask
+    shortNames:
+      - etask
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [queue, handlerService]
+              properties:
+                queue: { type: string }
+                handlerService:
+                  type: string
+                  description: Name of an ElpioService that handles dequeued tasks.
+                rateLimit: { type: integer }
+                retry:
+                  type: object
+                  properties:
+                    maxAttempts: { type: integer }
+                schedule:
+                  type: string
+                  description: Optional cron schedule for periodic dispatch.
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true

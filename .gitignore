@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local
+*.local
+kubeconfig
+
+# Claude Code project memory (kept local, not tracked)
+CLAUDE.md
+
+# codegraph index
+.codegraph/
+
+# codegraph auth key (never commit)
+.codegraph/auth.key
+
+# Claude Code local config
+.claude/
+
+# Docs (kept local, not tracked)
+/docs/
