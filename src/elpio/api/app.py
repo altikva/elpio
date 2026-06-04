@@ -29,8 +29,12 @@ from elpio.providers.identity import IdentityProvider, NullIdentityProvider, Pri
 
 class ClusterCreate(BaseModel):
     name: str
-    server: Optional[str] = None
+    # Reach the cluster either by kubeconfig context, or directly by server+token.
     context: Optional[str] = None
+    server: Optional[str] = None
+    token: Optional[str] = None
+    ca: Optional[str] = None
+    insecure: bool = False  # skip TLS verification (dev only)
 
 
 class ServiceCreate(BaseModel):

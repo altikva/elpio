@@ -7,6 +7,7 @@
 # Description: Unit tests for the gateway.
 
 from elpio.api.gateway import FleetRegistry, KubeCRGateway
+from elpio.k8s import connection_kind
 
 
 class FakeApi:
@@ -26,8 +27,8 @@ class FakeApi:
 
 
 class FakeDyn:
-    def __init__(self, context):
-        self.context = context
+    def __init__(self, record):
+        self.record = record
         self.applied = []
 
         class _Resources:
@@ -38,29 +39,29 @@ class FakeDyn:
 
 
 def _factory_recording(seen):
-    def factory(context):
-        seen.append(context)
-        return FakeDyn(context)
+    def factory(record):
+        seen.append(record)
+        return FakeDyn(record)
 
     return factory
 
 
-def test_resolves_registered_context_per_cluster():
+def test_resolves_registered_record_per_cluster():
     seen = []
     reg = FleetRegistry()
     reg.register("edge-1", {"context": "kind-edge-1"})
     gw = KubeCRGateway(reg, client_factory=_factory_recording(seen))
 
     gw.apply_service("edge-1", "api", "demo", {"image": "x:1"})
-    assert seen == ["kind-edge-1"]
+    assert seen == [{"name": "edge-1", "context": "kind-edge-1"}]
 
 
-def test_apply_targets_the_right_clients_client():
+def test_apply_targets_the_resolved_client():
     captured = {}
 
-    def factory(context):
-        dyn = FakeDyn(context)
-        captured[context] = dyn
+    def factory(record):
+        dyn = FakeDyn(record)
+        captured[record["name"]] = dyn
         return dyn
 
     reg = FleetRegistry()
@@ -69,12 +70,31 @@ def test_apply_targets_the_right_clients_client():
 
     obj = gw.apply_service("edge-1", "api", "demo", {"image": "ghcr.io/acme/api:1"})
     assert obj["kind"] == "ElpioService"
-    applied = captured["ctx-a"].applied
-    assert applied == [("demo", "api", obj)]
+    assert captured["edge-1"].applied == [("demo", "api", obj)]
 
 
-def test_unknown_cluster_falls_back_to_default_context():
+def test_token_record_is_passed_through():
+    seen = []
+    reg = FleetRegistry()
+    reg.register("saas-1", {"server": "https://api.saas:6443", "token": "abc", "ca": "PEM"})
+    gw = KubeCRGateway(reg, client_factory=_factory_recording(seen))
+
+    gw.list_services("saas-1")
+    record = seen[0]
+    assert connection_kind(record) == "token"
+    assert record["server"] == "https://api.saas:6443" and record["token"] == "abc"
+
+
+def test_unknown_cluster_falls_back_to_empty_record():
     seen = []
     gw = KubeCRGateway(FleetRegistry(), client_factory=_factory_recording(seen))
     gw.list_services("ghost")
-    assert seen == [None]  # no record → default (None) context
+    assert seen == [{}]  # no record → default connection (context None)
+    assert connection_kind(seen[0]) == "context"
+
+
+def test_connection_kind_classification():
+    assert connection_kind(None) == "context"
+    assert connection_kind({"context": "x"}) == "context"
+    assert connection_kind({"server": "https://a", "token": "t"}) == "token"
+    assert connection_kind({"server": "https://a"}) == "context"  # token missing

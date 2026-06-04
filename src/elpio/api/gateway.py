@@ -80,23 +80,24 @@ class InMemoryCRGateway(CRGateway):
 class KubeCRGateway(CRGateway):
     """Real gateway: server-side applies CRs via the Kubernetes API.
 
-    Each registered cluster carries a kubeconfig ``context`` (set when it was
-    registered); the gateway resolves a client for that context so it authors
-    CRs against the right cluster in the fleet. ``client_factory`` maps a context
-    name to a DynamicClient and is injectable for tests.
+    Each registered cluster carries connection info — a kubeconfig ``context`` or
+    a direct ``server`` + ``token`` (+ optional ``ca``). The gateway resolves a
+    client from that record so it authors CRs against the right cluster.
+    ``client_factory`` maps a cluster record to a DynamicClient and is injectable
+    for tests.
     """
 
     def __init__(self, registry: FleetRegistry, client_factory=None) -> None:
         self._registry = registry
         if client_factory is None:
-            from elpio.k8s import client_for
+            from elpio.k8s import client_for_record
 
-            client_factory = client_for
+            client_factory = client_for_record
         self._client_factory = client_factory
 
     def _client(self, cluster: str):
         record = self._registry.get(cluster) or {}
-        return self._client_factory(record.get("context"))
+        return self._client_factory(record)
 
     def list_services(self, cluster: str, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
         api = self._client(cluster).resources.get(
