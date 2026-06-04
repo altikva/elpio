@@ -1,6 +1,6 @@
-# ElpioFunction — source → container (Cloud Functions equivalent). Phase 3.
-# Stub CRD: a Tekton + Cloud Native Buildpacks pipeline builds the source into an
-# image, then produces an ElpioService. Schema intentionally permissive for now.
+# ElpioFunction — source → container (Cloud Functions equivalent).
+# A Tekton + Cloud Native Buildpacks pipeline builds the source into an image,
+# then the operator produces an ElpioService from it.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -20,24 +20,74 @@ spec:
       storage: true
       subresources:
         status: {}
+      additionalPrinterColumns:
+        - name: Image
+          type: string
+          jsonPath: .status.image
+        - name: Ready
+          type: string
+          jsonPath: .status.ready
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
       schema:
         openAPIV3Schema:
           type: object
+          required: [spec]
           properties:
             spec:
               type: object
-              required: [source, runtime]
+              required: [source, runtime, image]
               properties:
                 source:
                   type: object
                   description: Where the function source comes from.
                   properties:
-                    git: { type: string }
+                    git:
+                      type: object
+                      required: [url]
+                      properties:
+                        url: { type: string }
+                        revision: { type: string, default: main }
+                        subPath: { type: string }
                     archive: { type: string }
                 runtime:
                   type: string
-                  description: Buildpack/runtime (e.g. python, node, go).
+                  description: Buildpack/runtime hint (e.g. python, node, go).
+                image:
+                  type: string
+                  description: Target image the build pushes to and the service runs.
                 entrypoint: { type: string }
+                builder:
+                  type: string
+                  default: paketobuildpacks/builder-jammy-base
+                port:
+                  type: integer
+                  default: 8080
+                env:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, value]
+                    properties:
+                      name: { type: string }
+                      value: { type: string }
+                scaling:
+                  type: object
+                  properties:
+                    minScale: { type: integer, default: 0 }
+                    maxScale: { type: integer, default: 0 }
+                    target: { type: integer, default: 100 }
+                    metric:
+                      type: string
+                      enum: [concurrency, rps, cpu]
+                      default: concurrency
+                serviceAccount: { type: string }
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
+              properties:
+                ready: { type: boolean }
+                image: { type: string }
+                build: { type: string }
+                observedGeneration: { type: integer }
