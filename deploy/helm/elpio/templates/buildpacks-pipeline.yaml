@@ -1,17 +1,13 @@
-# The Pipeline that ElpioFunction's PipelineRun binds to (pipelineRef:
-# elpio-buildpacks). Clones the source and builds it into an image with Cloud
-# Native Buildpacks. Tasks are pulled via Tekton's hub resolver, so no separate
-# `tkn hub install` is required (remote resolution must be enabled, which it is
-# by default in recent Tekton).
-#
-# Source params all default to "" so PipelineRuns from either the git or archive
-# path validate; archive fetching is not yet wired (git path is implemented).
+{{- if .Values.functions.enabled }}
+# The elpio-buildpacks Pipeline ElpioFunction binds to. Canonical source:
+# deploy/tekton/buildpacks-pipeline.yaml. Requires Tekton Pipelines in cluster.
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: elpio-buildpacks
+  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/managed-by: elpio
+    {{- include "elpio.labels" . | nindent 4 }}
 spec:
   params:
     - name: SOURCE_URL
@@ -34,7 +30,6 @@ spec:
   workspaces:
     - name: source
   tasks:
-    # Git path: runs only when SOURCE_URL is set.
     - name: fetch-git
       when:
         - input: $(params.SOURCE_URL)
@@ -57,8 +52,6 @@ spec:
       workspaces:
         - name: output
           workspace: source
-    # Archive path: runs only when SOURCE_ARCHIVE is set. Downloads + unpacks a
-    # tarball into the source workspace.
     - name: fetch-archive
       when:
         - input: $(params.SOURCE_ARCHIVE)
@@ -79,8 +72,6 @@ spec:
         steps:
           - name: download
             image: docker.io/library/alpine:3.20
-            # Pass the (user-controlled) URL via env so the shell treats it as
-            # data, never code. Only https sources are accepted.
             env:
               - name: ARCHIVE_URL
                 value: $(params.ARCHIVE)
@@ -95,7 +86,6 @@ spec:
               curl -fsSL "$ARCHIVE_URL" -o /tmp/src.tgz
               tar -xzf /tmp/src.tgz -C "$(workspaces.output.path)"
     - name: build
-      # Skipped fetch tasks don't block; build runs after whichever fetched.
       runAfter: [fetch-git, fetch-archive]
       taskRef:
         resolver: hub
@@ -116,3 +106,4 @@ spec:
       workspaces:
         - name: source
           workspace: source
+{{- end }}

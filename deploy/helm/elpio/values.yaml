@@ -24,6 +24,11 @@ webhook:
   enabled: true
   allowedRegistries: ""   # comma-separated; empty = allow all
 
+# ElpioFunction build support: installs the elpio-buildpacks Tekton Pipeline.
+# Needs Tekton Pipelines in the cluster. Off by default.
+functions:
+  enabled: false
+
 # Management API / fleet tier (FastAPI). Off by default.
 api:
   enabled: false

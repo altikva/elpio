@@ -44,6 +44,14 @@ class Broker(ABC):
     def nack(self, msg: Message, requeue: bool = True) -> None:
         """Negative-acknowledge; requeue for another attempt by default."""
 
+    def dead_letter(self, msg: Message) -> None:
+        """Route a message that exhausted its retries.
+
+        Default behaviour drops it (acks). Brokers that support a dead-letter
+        queue override this to preserve the message for inspection.
+        """
+        self.ack(msg)
+
 
 def httpx_poster(timeout: float = 30.0) -> Poster:
     def post(url: str, body: Dict[str, Any]) -> int:
@@ -86,7 +94,7 @@ class Dispatcher:
         else:
             msg.attempts += 1
             if msg.attempts >= self._max:
-                self._broker.ack(msg)  # give up: drop (dead-letter is a follow-up)
+                self._broker.dead_letter(msg)  # exhausted retries → DLQ (or drop)
             else:
                 self._broker.nack(msg, requeue=True)
         if self._rate:
