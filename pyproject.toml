@@ -52,7 +52,10 @@ packages = ["src/elpio"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["e2e: end-to-end tests that need a live cluster (kind)"]
+markers = [
+  "e2e: end-to-end tests that need a live cluster (kind)",
+  "integration: tests that need live brokers (redis/rabbitmq/nats)",
+]
 
 [tool.ruff]
 line-length = 100
