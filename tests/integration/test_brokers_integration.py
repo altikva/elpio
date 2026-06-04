@@ -4,9 +4,8 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: Integration tests for the live broker backends (redis,
-#              rabbitmq, nats). Gated on ELPIO_INTEGRATION=1; each test
-#              skips if its client lib or service is unavailable.
+# Description: Round-trip the real broker backends against live services.
+
 """Round-trip the real broker backends against live services.
 
 Skipped unless ELPIO_INTEGRATION=1 (see conftest). `task integration` and the CI

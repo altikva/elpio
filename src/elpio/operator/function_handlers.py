@@ -5,6 +5,7 @@
 # __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: kopf handlers for ``ElpioFunction``.
+
 # kopf handlers for ``ElpioFunction``.
 #
 # Render the build PipelineRun + the derived ElpioService, own them, and apply.
