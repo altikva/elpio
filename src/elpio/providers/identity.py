@@ -1,15 +1,23 @@
-"""``IdentityProvider`` seam — replaces A4C's hard-wired GateApe + Google OAuth2.
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-06-04
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: ``IdentityProvider`` seam.
+
+"""``IdentityProvider`` seam.
 
 Authentication is generic OIDC; authorization is Kubernetes-native
-(SubjectAccessReview / RBAC) rather than a cloud IAM API. GateApe becomes one
-OIDC plugin, not the assumption (RFC 0001 §4.4).
+(SubjectAccessReview / RBAC) rather than a cloud IAM API. Any enterprise identity
+provider plugs in as an OIDC provider, not a baked-in assumption.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional, Sequence
 
 
 @dataclass
@@ -40,3 +48,103 @@ class NullIdentityProvider(IdentityProvider):
 
     def authorize(self, principal: Principal, verb: str, resource: str) -> bool:
         return True
+
+
+# A SAR reviewer answers "may this principal do <verb> on <resource>?". Injected
+# so the OIDC provider is unit-testable without a cluster.
+SarReviewer = Callable[[Principal, str, str], bool]
+
+
+class OIDCIdentityProvider(IdentityProvider):
+    """Authenticate via OIDC JWTs; authorize via Kubernetes SubjectAccessReview.
+
+    Pass ``signing_key`` for symmetric (HS*) tokens — handy for tests — or
+    ``jwks_uri`` to verify RS*/ES* tokens against a provider's published JWKS.
+    ``resource`` strings are ``"<resource>"`` (group defaults to ``elpio.io``) or
+    ``"<group>/<resource>"`` (use ``"core/..."`` for the core API group).
+    """
+
+    def __init__(
+        self,
+        *,
+        issuer: Optional[str] = None,
+        audience: Optional[str] = None,
+        jwks_uri: Optional[str] = None,
+        signing_key: Optional[str] = None,
+        algorithms: Sequence[str] = ("RS256",),
+        groups_claim: str = "groups",
+        default_group: str = "elpio.io",
+        sar_reviewer: Optional[SarReviewer] = None,
+    ) -> None:
+        if not signing_key and not jwks_uri:
+            raise ValueError("OIDCIdentityProvider needs signing_key or jwks_uri")
+        self._issuer = issuer
+        self._audience = audience
+        self._jwks_uri = jwks_uri
+        self._signing_key = signing_key
+        self._algorithms = list(algorithms)
+        self._groups_claim = groups_claim
+        self._default_group = default_group
+        self._sar_reviewer = sar_reviewer
+        self._jwks_client = None  # lazily built
+
+    def _key_for(self, token: str):
+        if self._signing_key is not None:
+            return self._signing_key
+        import jwt  # lazy: pyjwt lives in the `server` extra, not the lean core
+
+        if self._jwks_client is None:
+            self._jwks_client = jwt.PyJWKClient(self._jwks_uri)
+        return self._jwks_client.get_signing_key_from_jwt(token).key
+
+    def authenticate(self, token: str) -> Optional[Principal]:
+        import jwt  # lazy
+
+        options = {"require": ["sub"], "verify_aud": self._audience is not None}
+        try:
+            claims = jwt.decode(
+                token,
+                self._key_for(token),
+                algorithms=self._algorithms,
+                audience=self._audience,
+                issuer=self._issuer,
+                options=options,
+            )
+        except Exception:  # any pyjwt error → unauthenticated
+            return None
+
+        groups = claims.get(self._groups_claim) or []
+        if isinstance(groups, str):
+            groups = [groups]
+        return Principal(
+            subject=claims["sub"],
+            email=claims.get("email"),
+            groups=list(groups),
+        )
+
+    def authorize(self, principal: Principal, verb: str, resource: str) -> bool:
+        reviewer = self._sar_reviewer or self._cluster_sar
+        return reviewer(principal, verb, resource)
+
+    def _split_resource(self, resource: str) -> tuple[str, str]:
+        if "/" in resource:
+            group, res = resource.split("/", 1)
+            return ("" if group == "core" else group), res
+        return self._default_group, resource
+
+    def _cluster_sar(self, principal: Principal, verb: str, resource: str) -> bool:
+        """Default reviewer: a real SubjectAccessReview against the cluster."""
+        from kubernetes import client  # lazy: only needed in-cluster
+
+        group, res = self._split_resource(resource)
+        review = client.V1SubjectAccessReview(
+            spec=client.V1SubjectAccessReviewSpec(
+                user=principal.subject,
+                groups=principal.groups,
+                resource_attributes=client.V1ResourceAttributes(
+                    verb=verb, group=group, resource=res
+                ),
+            )
+        )
+        resp = client.AuthorizationV1Api().create_subject_access_review(review)
+        return bool(resp.status.allowed)
