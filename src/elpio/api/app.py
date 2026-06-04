@@ -60,7 +60,11 @@ def create_app(
 ) -> FastAPI:
     identity = identity or _default_identity()
     registry = registry or FleetRegistry()
-    gateway = gateway or (InMemoryCRGateway() if isinstance(identity, NullIdentityProvider) else KubeCRGateway())
+    gateway = gateway or (
+        InMemoryCRGateway()
+        if isinstance(identity, NullIdentityProvider)
+        else KubeCRGateway(registry)
+    )
 
     app = FastAPI(title="elpio-management-api")
 

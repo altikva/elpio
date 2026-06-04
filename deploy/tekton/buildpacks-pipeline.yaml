@@ -1,0 +1,75 @@
+# The Pipeline that ElpioFunction's PipelineRun binds to (pipelineRef:
+# elpio-buildpacks). Clones the source and builds it into an image with Cloud
+# Native Buildpacks. Tasks are pulled via Tekton's hub resolver, so no separate
+# `tkn hub install` is required (remote resolution must be enabled, which it is
+# by default in recent Tekton).
+#
+# Source params all default to "" so PipelineRuns from either the git or archive
+# path validate; archive fetching is not yet wired (git path is implemented).
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: elpio-buildpacks
+  labels:
+    app.kubernetes.io/managed-by: elpio
+spec:
+  params:
+    - name: SOURCE_URL
+      type: string
+      default: ""
+    - name: SOURCE_REVISION
+      type: string
+      default: main
+    - name: SOURCE_SUBPATH
+      type: string
+      default: ""
+    - name: SOURCE_ARCHIVE
+      type: string
+      default: ""
+    - name: APP_IMAGE
+      type: string
+    - name: BUILDER_IMAGE
+      type: string
+      default: paketobuildpacks/builder-jammy-base
+  workspaces:
+    - name: source
+  tasks:
+    - name: fetch
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: version
+            value: "0.9"
+      params:
+        - name: url
+          value: $(params.SOURCE_URL)
+        - name: revision
+          value: $(params.SOURCE_REVISION)
+      workspaces:
+        - name: output
+          workspace: source
+    - name: build
+      runAfter: [fetch]
+      taskRef:
+        resolver: hub
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildpacks
+          - name: version
+            value: "0.5"
+      params:
+        - name: APP_IMAGE
+          value: $(params.APP_IMAGE)
+        - name: BUILDER_IMAGE
+          value: $(params.BUILDER_IMAGE)
+        - name: SOURCE_SUBPATH
+          value: $(params.SOURCE_SUBPATH)
+      workspaces:
+        - name: source
+          workspace: source

@@ -27,6 +27,11 @@ tasks:
     cmds:
       - ruff check src tests
 
+  headers:
+    desc: Apply the Altikva license header + description to every source file
+    cmds:
+      - python hack/apply_headers.py
+
   unit:
     desc: Run unit tests (no cluster needed)
     cmds:
@@ -52,6 +57,11 @@ tasks:
     desc: Install Knative Serving (+ Kourier) and KEDA into the current context
     cmds:
       - bash hack/install-knative.sh
+
+  tekton-install:
+    desc: Install the elpio-buildpacks Pipeline (needs Tekton Pipelines)
+    cmds:
+      - kubectl apply -f deploy/tekton
 
   e2e-up:
     desc: Provision kind + Knative/KEDA + Elpio CRDs, ready for `task e2e`

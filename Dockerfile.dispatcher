@@ -1,0 +1,14 @@
+# Elpio task dispatcher image. Runs the worker an ElpioTask scales with KEDA:
+# pulls from the broker queue and POSTs to the handler ElpioService.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --no-cache-dir '.[dispatcher]'
+
+RUN useradd --create-home --uid 10002 elpio
+USER 10002
+
+ENTRYPOINT ["python", "-m", "elpio.dispatcher.main"]
