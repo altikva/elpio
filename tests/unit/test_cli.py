@@ -33,14 +33,28 @@ def test_colored_landing_styles_version_and_sections():
     colored = render_landing("9.9.9", color=True)
     assert ESC in colored
     assert "9.9.9" in colored
-    assert "Examples:" in colored
+    assert "╭─" in colored and "Examples" in colored
+
+
+def test_panels_are_aligned_in_both_modes():
+    import re as _re
+
+    strip = lambda s: _re.sub(r"\033\[[0-9;]*m", "", s)  # noqa: E731
+    for colored in (False, True):
+        landing = render_landing("0.1.0", color=colored)
+        box_rows = [r for r in landing.split("\n") if r and strip(r)[0] in "╭│╰"]
+        widths = {len(strip(r)) for r in box_rows}
+        # every border/body row of a panel shares one width per panel; with two
+        # panels we expect at most two distinct widths, and they must be uniform.
+        assert len(widths) <= 2, f"misaligned panel rows: {widths}"
 
 
 def test_bare_invocation_shows_landing_and_exits_zero():
     res = CliRunner().invoke(main, [])
     assert res.exit_code == 0
     assert BANNER_MARK in res.stderr
-    assert "Examples:" in res.stderr
+    assert "Commands" in res.stderr and "Examples" in res.stderr
+    assert "╭─" in res.stderr and "╰" in res.stderr  # boxed panels
     assert res.stdout == ""  # stdout stays clean
 
 

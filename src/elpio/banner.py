@@ -15,6 +15,10 @@ clean for piping (``elpio version``, list output, etc.).
 
 from __future__ import annotations
 
+import re
+
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
 _BANNER = (
     " _____ _       _       \n"
     "| ____| |_ __ (_) ___  \n"
@@ -44,6 +48,9 @@ def _bold(text: str) -> str:
 def _dim(text: str) -> str:
     return f"\033[2m{text}{_RESET}"
 
+
+_ACCENT = 44  # teal, for panel borders/titles and command names
+
 _COMMANDS = [
     ("install", "Apply the CRDs + operator to the current kube-context"),
     ("deploy", "Create or update an ElpioService from a YAML file"),
@@ -53,10 +60,51 @@ _COMMANDS = [
 ]
 
 _EXAMPLES = [
-    "elpio install",
-    "elpio deploy -f examples/hello.yaml",
-    "elpio services -A",
+    ("elpio install", "apply the CRDs + operator to the cluster"),
+    ("elpio deploy -f examples/hello.yaml", "create an ElpioService"),
+    ("elpio services -A", "list ElpioServices in all namespaces"),
+    ("elpio operator", "run the reconciler in the foreground"),
 ]
+
+
+def _visible_len(text: str) -> int:
+    return len(_ANSI_RE.sub("", text))
+
+
+def _pad(text: str, width: int) -> str:
+    return text + " " * max(0, width - _visible_len(text))
+
+
+def _two_col(pairs: list[tuple[str, str]], color: bool) -> list[str]:
+    left_w = max(len(left) for left, _ in pairs)
+    rows = []
+    for left, right in pairs:
+        left_cell = _fg(left.ljust(left_w), _ACCENT, bold=True) if color else left.ljust(left_w)
+        rows.append(f"{left_cell}  {right}")
+    return rows
+
+
+def _panel(title: str, rows: list[str], color: bool) -> str:
+    """A rounded box (Spero-style) around ``rows``, fit to content."""
+    content_w = max([_visible_len(r) for r in rows] + [len(title) + 1])
+    total = content_w + 4  # │ + space + content + space + │
+    fill = total - (len(title) + 4) - 1  # after "╭─ {title} ", before "╮"
+
+    if color:
+        top = (
+            _fg("╭─ ", _ACCENT)
+            + _fg(title, _ACCENT, bold=True)
+            + _fg(" " + "─" * fill + "╮", _ACCENT)
+        )
+        bottom = _fg("╰" + "─" * (total - 2) + "╯", _ACCENT)
+        bar = _fg("│", _ACCENT)
+        body = [f"{bar} {_pad(r, content_w)} {bar}" for r in rows]
+    else:
+        top = f"╭─ {title} " + "─" * fill + "╮"
+        bottom = "╰" + "─" * (total - 2) + "╯"
+        body = [f"│ {_pad(r, content_w)} │" for r in rows]
+
+    return "\n".join([top, *body, bottom])
 
 
 def render_banner(color: bool = False) -> str:
@@ -74,19 +122,19 @@ def render_banner(color: bool = False) -> str:
 
 def render_landing(version: str, color: bool = False) -> str:
     """The full landing screen shown on a bare ``elpio`` invocation."""
-    width = max(len(name) for name, _ in _COMMANDS)
-
     if color:
-        version_line = f"{_fg('v' + version, 44, bold=True)}  ---  {_dim(_TAGLINE)}"
-        cmd_lines = [f"  {_fg(name.ljust(width), 37, bold=True)}  {desc}" for name, desc in _COMMANDS]
-        headers = (_bold("Commands:"), _bold("Examples:"))
+        version_line = f"{_fg('v' + version, _ACCENT, bold=True)}  ---  {_dim(_TAGLINE)}"
     else:
         version_line = f"v{version}  ---  {_TAGLINE}"
-        cmd_lines = [f"  {name.ljust(width)}  {desc}" for name, desc in _COMMANDS]
-        headers = ("Commands:", "Examples:")
 
-    lines = [render_banner(color=color), "", version_line, "", headers[0]]
-    lines += cmd_lines
-    lines += ["", headers[1]]
-    lines += [f"  {ex}" for ex in _EXAMPLES]
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            render_banner(color=color),
+            "",
+            version_line,
+            "",
+            _panel("Commands", _two_col(_COMMANDS, color), color),
+            "",
+            _panel("Examples", _two_col(_EXAMPLES, color), color),
+        ]
+    )
