@@ -13,9 +13,13 @@ import yaml
 from elpio.function import render_pipeline_run
 from elpio.models.function import FunctionSpec
 
-PIPELINE = yaml.safe_load(
-    (Path(__file__).resolve().parents[2] / "deploy/tekton/buildpacks-pipeline.yaml").read_text()
-)
+ROOT = Path(__file__).resolve().parents[2]
+PIPELINE = yaml.safe_load((ROOT / "deploy/tekton/buildpacks-pipeline.yaml").read_text())
+
+
+def _archive_script():
+    task = next(t for t in PIPELINE["spec"]["tasks"] if t["name"] == "fetch-archive")
+    return task["taskSpec"]["steps"][0]["script"]
 
 
 def test_pipeline_is_named_what_the_render_references():
@@ -54,3 +58,22 @@ def test_fetch_tasks_are_gated_on_their_source():
     arch_when = tasks["fetch-archive"]["when"][0]["input"]
     assert git_when == "$(params.SOURCE_URL)"
     assert arch_when == "$(params.SOURCE_ARCHIVE)"
+
+
+def test_archive_fetch_handles_common_formats():
+    script = _archive_script()
+    for ext in ("*.tar.gz|*.tgz", "*.tar.bz2|*.tbz2", "*.tar.xz|*.txz", "*.tar", "*.zip"):
+        assert ext in script
+    assert "unzip" in script  # zip support installed
+
+
+def test_archive_fetch_keeps_the_https_guard():
+    script = _archive_script()
+    assert 'ARCHIVE must be an https:// URL' in script
+
+
+def test_helm_pipeline_archive_script_matches_standalone():
+    # The chart copy must stay in sync with the canonical Tekton file.
+    helm_text = (ROOT / "deploy/helm/elpio/templates/buildpacks-pipeline.yaml").read_text()
+    for ext in ("*.tar.gz|*.tgz", "*.tar.bz2|*.tbz2", "*.tar.xz|*.txz", "*.zip"):
+        assert ext in helm_text
