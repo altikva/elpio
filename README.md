@@ -1,6 +1,15 @@
-# Elpio
+```
+ _____ _       _
+| ____| |_ __ (_) ___
+|  _| | | '_ \| |/ _ \
+| |___| | |_) | | (_) |
+|_____|_| .__/|_|\___/
+        |_|
+```
 
-> Turn any Kubernetes cluster into a private serverless platform.
+**Turn any Kubernetes cluster into a private serverless platform.**
+
+---
 
 **Elpio** is an installable, self-hosted **Cloud Run / Cloud Functions / Cloud Tasks** for
 your own Kubernetes — scale-to-zero, request-driven autoscaling, simplified cluster + node
