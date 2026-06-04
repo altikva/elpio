@@ -77,18 +77,58 @@ def _elpio_service(name: str, namespace: str, spec: FunctionSpec, labels: Dict[s
     }
 
 
+def _with_owner(obj: Dict[str, Any], owner: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if owner:
+        obj["metadata"]["ownerReferences"] = [owner]
+    return obj
+
+
+def render_pipeline_run(
+    name: str, namespace: str, spec: FunctionSpec, owner: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    labels = {**_MANAGED, "elpio.io/function": name}
+    return _with_owner(_pipeline_run(name, namespace, spec, labels), owner)
+
+
+def render_service(
+    name: str, namespace: str, spec: FunctionSpec, owner: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    labels = {**_MANAGED, "elpio.io/function": name}
+    return _with_owner(_elpio_service(name, namespace, spec, labels), owner)
+
+
 def render_function(
     name: str,
     namespace: str,
     spec: FunctionSpec,
     owner: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    labels = {**_MANAGED, "elpio.io/function": name}
-    objs = [
-        _pipeline_run(name, namespace, spec, labels),
-        _elpio_service(name, namespace, spec, labels),
+    return [
+        render_pipeline_run(name, namespace, spec, owner),
+        render_service(name, namespace, spec, owner),
     ]
-    if owner:
-        for o in objs:
-            o["metadata"]["ownerReferences"] = [owner]
-    return objs
+
+
+def pipelinerun_phase(status: Optional[Dict[str, Any]]) -> str:
+    """Map a Tekton PipelineRun ``.status`` to a coarse phase.
+
+    Returns ``Succeeded``/``Failed`` from the terminal ``Succeeded`` condition,
+    ``Running`` while it is in progress, or ``Pending`` before the status exists.
+    """
+    for cond in (status or {}).get("conditions") or []:
+        if cond.get("type") == "Succeeded":
+            return {"True": "Succeeded", "False": "Failed"}.get(cond.get("status"), "Running")
+    return "Pending"
+
+
+def next_action(phase: str, service_applied: bool) -> str:
+    """Decide what the reconciler should do given the build phase.
+
+    ``apply`` (build done, service not yet created), ``fail`` (build failed),
+    ``noop`` (already applied), or ``wait`` (still building).
+    """
+    if phase == "Succeeded":
+        return "noop" if service_applied else "apply"
+    if phase == "Failed":
+        return "fail"
+    return "wait"
