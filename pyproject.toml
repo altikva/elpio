@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://elpio.io"
+Homepage = "https://github.com/altikva/elpio"
 Repository = "https://github.com/altikva/elpio"
 
 [project.scripts]
