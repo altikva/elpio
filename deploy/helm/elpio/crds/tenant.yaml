@@ -95,3 +95,13 @@ spec:
                 ready: { type: boolean }
                 namespace: { type: string }
                 observedGeneration: { type: integer }
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: { type: string }
+                      status: { type: string }
+                      reason: { type: string }
+                      message: { type: string }
+                      lastTransitionTime: { type: string }

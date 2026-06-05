@@ -73,3 +73,13 @@ spec:
                 queue: { type: string }
                 scheduled: { type: boolean }
                 observedGeneration: { type: integer }
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: { type: string }
+                      status: { type: string }
+                      reason: { type: string }
+                      message: { type: string }
+                      lastTransitionTime: { type: string }

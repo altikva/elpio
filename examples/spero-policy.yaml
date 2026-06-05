@@ -1,0 +1,72 @@
+# Supervise an Elpio deployment with Spero (the sibling Altikva self-healing agent).
+#
+#   spero watch -f examples/spero-policy.yaml      # supervise continuously
+#   spero serve                                    # or run the control-plane API
+#   spero top                                      # live k9s-style dashboard
+#
+# Elpio's operator owns provisioning the custom resources; Spero owns day-2
+# health and policy-gated remediation. Spero's elpio-* probes read each CR's
+# `status.conditions[type=Ready]` (which Elpio now emits), so scale-to-zero is
+# healthy and a failed build or paused autoscaler shows up as not-Ready.
+version: 1
+frozen: false
+
+targets:
+  # An ElpioService (default Knative engine). Idle-at-zero is healthy. There is no
+  # safe automatic heal for a Ready=False service, so this target is alert-only.
+  - name: hello
+    provider: k8s:prod/default
+    probe:
+      type: elpio-service
+      params: { name: hello }
+      interval: 30
+
+  # An ElpioTask (KEDA-backed durable queue worker). If KEDA's autoscaler is paused
+  # the queue stops draining; unpause it. The ScaledObject shares the task's name.
+  - name: emailq
+    provider: k8s:prod/default
+    probe:
+      type: elpio-task
+      params: { name: emailq }
+      interval: 30
+    remediations:
+      - type: keda-unpause
+        params: { name: emailq }
+        autonomy: gated
+        max_attempts: 2
+
+  # An ElpioFunction (source -> Tekton build -> ElpioService). Ready=False means a
+  # failed build or a not-yet-Ready produced service; alert-only here.
+  - name: thumbnailer
+    provider: k8s:prod/default
+    probe:
+      type: elpio-function
+      params: { name: thumbnailer }
+      interval: 60
+
+  # A KEDA-engine ElpioService (ELPIO_ENGINE=keda) supervised at the ScaledObject
+  # level, with automatic unpause.
+  - name: hello-keda
+    provider: k8s:prod/default
+    probe:
+      type: keda-scaledobject
+      params: { name: hello-keda }
+      interval: 30
+    remediations:
+      - type: keda-unpause
+        params: { name: hello-keda }
+        autonomy: auto
+        max_attempts: 2
+
+  # The broker an ElpioTask depends on: watch its disk and rotate logs before it
+  # fills. Rotation deletes files, so it must be gated.
+  - name: redis-disk
+    provider: ssh:ops@broker-01
+    probe:
+      type: disk
+      params: { path: /data, threshold_pct: 85 }
+      interval: 300
+    remediations:
+      - type: rotate
+        params: { path: /data/appendonly, keep_days: 7 }
+        autonomy: gated
