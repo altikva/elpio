@@ -86,7 +86,10 @@ class KedaEngine(ServingEngine):
             "metadata": {"name": name, "namespace": namespace, "labels": labels},
             "spec": {
                 "scaleTargetRef": {"name": name},
-                "minReplicaCount": spec.scaling.minScale,
+                # A cpu/memory-only trigger cannot scale to zero, and KEDA's
+                # admission webhook rejects minReplicaCount=0 in that case. Floor
+                # it at 1 until the request-driven (keda-http-add-on) path lands.
+                "minReplicaCount": max(spec.scaling.minScale, 1),
                 "maxReplicaCount": spec.scaling.maxScale or 10,
                 "triggers": [
                     {
