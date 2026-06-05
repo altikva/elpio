@@ -19,8 +19,12 @@ Elpio is an [Altikva](https://altikva.com) open-source product (MIT for code, CC
 docs). The name is a coined mark rooted in Greek *elpis* ("hope") — part of the Altikva family
 lineage *ha-tikva* (Hebrew) → *Spero* (Latin) → *Elpio*.
 
-> **Status: alpha (v0.1.0).** This is an early Phase 0/1 scaffold. The `ElpioService` reconciler
-> works against Knative/KEDA; `ElpioFunction` and `ElpioTask` are stubs.
+> **Status: alpha (v0.1.0).** All four reconcilers ship: `ElpioService` (Knative/KEDA serving),
+> `ElpioFunction` (Tekton + Buildpacks), `ElpioTask` (KEDA + broker), and `ElpioTenant` (namespace,
+> RBAC, quotas, network isolation). Alongside them: OIDC auth, an admission webhook, a multi-cluster
+> management API, a Helm chart, and CI. CRs emit `status.conditions`, so the sibling agent
+> [Spero](https://github.com/altikva/spero) can supervise and heal them. The kind-based e2e harness
+> is wired and gated behind `ELPIO_E2E=1`.
 
 ## Why
 
