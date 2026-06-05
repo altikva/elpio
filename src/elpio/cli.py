@@ -77,6 +77,11 @@ def install(manifests: str | None) -> None:
     """Install Elpio CRDs + operator into the current kube-context."""
     deploy = Path(manifests) if manifests else _repo_deploy_dir()
     _kubectl("apply", "-f", str(deploy / "crds"))
+    # The operator Deployment is namespaced in elpio-system, which rbac.yaml
+    # creates. `kubectl apply -f <dir>` orders files alphabetically, so the
+    # Deployment would otherwise race ahead of its namespace. Apply the namespace
+    # + RBAC first, then the rest of the operator manifests.
+    _kubectl("apply", "-f", str(deploy / "operator" / "rbac.yaml"))
     _kubectl("apply", "-f", str(deploy / "operator"))
     click.echo("elpio: CRDs + operator applied")
 
