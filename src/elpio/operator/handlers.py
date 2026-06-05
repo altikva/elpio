@@ -24,6 +24,7 @@ import kopf
 from elpio.engines.base import get_engine
 from elpio.k8s import apply_object
 from elpio.models.service import GROUP, PLURAL, VERSION, ElpioServiceSpec
+from elpio.status import condition, merge_conditions, now_rfc3339
 
 
 def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
@@ -40,7 +41,7 @@ def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
 @kopf.on.create(GROUP, VERSION, PLURAL)
 @kopf.on.update(GROUP, VERSION, PLURAL)
 @kopf.on.resume(GROUP, VERSION, PLURAL)
-def reconcile(spec, meta, name, namespace, patch, logger, **_):
+def reconcile(spec, meta, name, namespace, patch, logger, status, **_):
     parsed = ElpioServiceSpec.from_cr(dict(spec))
     engine = get_engine()
     owner = _owner_reference(name, meta["uid"])
@@ -59,6 +60,11 @@ def reconcile(spec, meta, name, namespace, patch, logger, **_):
     patch.status["url"] = engine.url_for(name, namespace)
     patch.status["observedGeneration"] = meta.get("generation")
     patch.status["ready"] = True
+    patch.status["conditions"] = merge_conditions(
+        status.get("conditions"),
+        [condition("Ready", True, reason="Reconciled", message=f"served by the {engine.name} engine")],
+        now_rfc3339(),
+    )
     return {"engine": engine.name, "objects": len(objects)}
 
 

@@ -21,6 +21,7 @@ import kopf
 
 from elpio.k8s import apply_object
 from elpio.models.tenant import GROUP, PLURAL, VERSION, TenantSpec
+from elpio.status import condition, merge_conditions, now_rfc3339
 from elpio.tenant import render_tenant
 
 
@@ -38,7 +39,7 @@ def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
 @kopf.on.create(GROUP, VERSION, PLURAL)
 @kopf.on.update(GROUP, VERSION, PLURAL)
 @kopf.on.resume(GROUP, VERSION, PLURAL)
-def reconcile_tenant(spec, meta, name, patch, logger, **_):
+def reconcile_tenant(spec, meta, name, patch, logger, status, **_):
     parsed = TenantSpec.from_cr(dict(spec))
     owner = _owner_reference(name, meta["uid"])
 
@@ -47,7 +48,13 @@ def reconcile_tenant(spec, meta, name, patch, logger, **_):
         apply_object(obj)
         logger.info("reconciled tenant child %s/%s", obj["kind"], obj["metadata"]["name"])
 
-    patch.status["namespace"] = parsed.namespace_for(name)
+    ns = parsed.namespace_for(name)
+    patch.status["namespace"] = ns
     patch.status["observedGeneration"] = meta.get("generation")
     patch.status["ready"] = True
-    return {"namespace": parsed.namespace_for(name), "objects": len(objects)}
+    patch.status["conditions"] = merge_conditions(
+        status.get("conditions"),
+        [condition("Ready", True, reason="Reconciled", message=f"namespace {ns} provisioned")],
+        now_rfc3339(),
+    )
+    return {"namespace": ns, "objects": len(objects)}

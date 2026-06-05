@@ -20,6 +20,7 @@ import kopf
 
 from elpio.k8s import apply_object
 from elpio.models.task import GROUP, PLURAL, VERSION, TaskSpec
+from elpio.status import condition, merge_conditions, now_rfc3339
 from elpio.task import render_task
 
 
@@ -37,7 +38,7 @@ def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
 @kopf.on.create(GROUP, VERSION, PLURAL)
 @kopf.on.update(GROUP, VERSION, PLURAL)
 @kopf.on.resume(GROUP, VERSION, PLURAL)
-def reconcile_task(spec, meta, name, namespace, patch, logger, **_):
+def reconcile_task(spec, meta, name, namespace, patch, logger, status, **_):
     parsed = TaskSpec.from_cr(dict(spec))
     owner = _owner_reference(name, meta["uid"])
 
@@ -50,4 +51,9 @@ def reconcile_task(spec, meta, name, namespace, patch, logger, **_):
     patch.status["scheduled"] = bool(parsed.schedule)
     patch.status["observedGeneration"] = meta.get("generation")
     patch.status["ready"] = True
+    patch.status["conditions"] = merge_conditions(
+        status.get("conditions"),
+        [condition("Ready", True, reason="Reconciled", message=f"dispatcher on queue {parsed.queue}")],
+        now_rfc3339(),
+    )
     return {"queue": parsed.queue, "objects": len(objects)}
