@@ -50,3 +50,10 @@ def test_knative_owner_reference_propagates():
 def test_keda_renders_deployment_service_scaledobject():
     kinds = {o["kind"] for o in KedaEngine().render("api", "demo", SPEC)}
     assert kinds == {"Deployment", "Service", "ScaledObject"}
+
+
+def test_keda_scaledobject_floors_minreplicas_at_one():
+    # SPEC requests minScale 0, but a cpu/memory trigger can't scale to zero and
+    # KEDA's webhook rejects minReplicaCount=0 — the engine must floor it at 1.
+    so = next(o for o in KedaEngine().render("api", "demo", SPEC) if o["kind"] == "ScaledObject")
+    assert so["spec"]["minReplicaCount"] == 1
