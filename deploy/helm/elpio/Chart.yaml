@@ -4,7 +4,7 @@ description: Turn any Kubernetes cluster into a private serverless platform.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://elpio.io
+home: https://github.com/altikva/elpio
 sources:
   - https://github.com/altikva/elpio
 keywords:
