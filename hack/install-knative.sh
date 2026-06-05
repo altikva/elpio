@@ -32,7 +32,11 @@ echo ">> Waiting for Knative to become Available"
 kubectl wait --for=condition=Available deployment --all -n knative-serving --timeout=300s
 
 echo ">> KEDA (${KEDA_VERSION}) for the keda engine"
-kubectl apply --server-side -f \
-  "https://github.com/kedacore/keda/releases/download/v${KEDA_VERSION}/keda-${KEDA_VERSION}.yaml"
+if kubectl get crd scaledobjects.keda.sh >/dev/null 2>&1; then
+  echo "   KEDA already present (e.g. installed via Helm); skipping to avoid apply conflicts"
+else
+  kubectl apply --server-side -f \
+    "https://github.com/kedacore/keda/releases/download/v${KEDA_VERSION}/keda-${KEDA_VERSION}.yaml"
+fi
 
 echo ">> Done: Knative + KEDA installed"
