@@ -69,3 +69,25 @@ def test_version_flag_prints_to_stdout():
     res = CliRunner().invoke(main, ["--version"])
     assert res.exit_code == 0
     assert __version__ in res.stdout
+
+
+def test_install_applies_namespace_rbac_before_the_operator(monkeypatch):
+    import os
+
+    calls = []
+
+    def fake_run(argv, check=False, **kw):
+        calls.append(list(argv))
+
+        class _Done:
+            returncode = 0
+
+        return _Done()
+
+    monkeypatch.setattr("elpio.cli.subprocess.run", fake_run)
+    res = CliRunner().invoke(main, ["install"])
+    assert res.exit_code == 0
+
+    targets = [os.path.basename(a[a.index("-f") + 1].rstrip("/")) for a in calls if "-f" in a]
+    # CRDs, then the namespace+RBAC, then the operator Deployment dir.
+    assert targets == ["crds", "rbac.yaml", "operator"]
