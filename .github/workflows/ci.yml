@@ -5,12 +5,18 @@ on:
     branches: [main]
   pull_request:
 
+# Run Node-based actions on Node 24. Several actions we depend on (azure/setup-helm,
+# arduino/setup-task, docker/*) have no Node-24 major yet; this opts them in and
+# silences the Node 20 deprecation.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: arduino/setup-task@v2
@@ -27,8 +33,8 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - uses: arduino/setup-task@v2
@@ -41,7 +47,7 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: azure/setup-helm@v4
       - run: helm lint deploy/helm/elpio
       - run: helm template elpio deploy/helm/elpio --namespace elpio-system >/dev/null
@@ -62,8 +68,8 @@ jobs:
           --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s
           --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       # NATS needs JetStream (-js), which service containers can't pass; run it directly.
