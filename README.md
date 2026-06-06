@@ -52,8 +52,8 @@ spec:
 | CRD | Equivalent | Engine |
 |-----|-----------|--------|
 | `ElpioService` | Cloud Run | Knative Serving (default) or KEDA |
-| `ElpioFunction` | Cloud Functions | Tekton + Buildpacks → `ElpioService` *(Phase 3)* |
-| `ElpioTask` | Cloud Tasks | KEDA + broker *(Phase 3)* |
+| `ElpioFunction` | Cloud Functions | Tekton + Buildpacks → `ElpioService` |
+| `ElpioTask` | Cloud Tasks | KEDA + broker + dispatcher |
 
 The serving engine is a **strategy** (`ELPIO_ENGINE=knative|keda`) behind one stable CRD —
 Knative for the highest Cloud Run parity, KEDA for a lighter footprint.
@@ -61,21 +61,17 @@ Knative for the highest Cloud Run parity, KEDA for a lighter footprint.
 ## Quickstart
 
 ```bash
-# 1. a cluster (any will do)
-kind create cluster --config tests/e2e/kind-config.yaml
-# 2. install your engine (Knative Serving) per its docs, then Elpio:
-pip install -e .
-elpio install                      # applies CRDs + operator
-# 3. deploy something that scales to zero
-elpio deploy -f examples/hello.yaml
+pip install elpio                  # the elpio CLI
+
+# point kubectl at any cluster (kind, minikube, GKE, EKS, ...) that has a
+# serving engine installed — Knative Serving (default) or KEDA.
+elpio install                      # applies the CRDs + operator
+elpio deploy -f hello.yaml         # the ElpioService shown above
 elpio services
 ```
 
-Run the operator locally instead of in-cluster:
-
-```bash
-task operator-run        # kopf run -m elpio.operator.handlers
-```
+Working from a clone instead? `task e2e-up` provisions kind + Knative/KEDA, and
+`task operator-run` runs the operator locally (`kopf run -m elpio.operator.handlers`).
 
 ## Development
 
