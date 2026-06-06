@@ -8,13 +8,15 @@
 
 """KEDA engine — the lighter-weight alternative to Knative.
 
-Renders a plain Deployment + Service + KEDA ScaledObject. This is the
-incremental path for clusters that don't want the full Knative networking layer.
+Renders a Deployment + Service plus an autoscaler chosen by the scaling metric:
 
-NOTE: a CPU/memory trigger cannot scale to zero. True request-driven
-scale-to-zero with KEDA needs the **keda-http-add-on** (an HTTPScaledObject +
-interceptor). That is tracked for Phase 1 of the bake-off; this
-renderer currently emits a CPU-triggered ScaledObject as the portable baseline.
+- **concurrency / rps** (request-driven): an ``HTTPScaledObject`` from the
+  keda-http-add-on. Traffic flows through the add-on's interceptor, which gives
+  true request-driven **scale-to-zero** (0 ↔ N on load). Requires the
+  keda-http-add-on in the cluster (``task keda-http-install``).
+- **cpu**: a plain KEDA ``ScaledObject`` with a cpu trigger. A cpu/memory trigger
+  cannot scale to zero (KEDA's webhook rejects ``minReplicaCount=0``), so the
+  floor is 1.
 """
 
 from __future__ import annotations
@@ -23,6 +25,10 @@ from typing import Any, Dict, List, Optional
 
 from elpio.engines.base import ServingEngine, container_resources
 from elpio.models.service import ElpioServiceSpec
+
+# Request-driven metrics route through the keda-http-add-on (scale-to-zero);
+# everything else falls back to a cpu-triggered ScaledObject.
+_HTTP_METRICS = ("concurrency", "rps")
 
 
 class KedaEngine(ServingEngine):
@@ -40,7 +46,23 @@ class KedaEngine(ServingEngine):
             "elpio.io/service": name,
             "app": name,
         }
+        http = spec.scaling.metric in _HTTP_METRICS
 
+        deployment = self._deployment(name, namespace, spec, labels, http)
+        service = self._service(name, namespace, spec, labels)
+        autoscaler = (
+            self._http_scaled_object(name, namespace, spec, labels)
+            if http
+            else self._cpu_scaled_object(name, namespace, spec, labels)
+        )
+
+        objects = [deployment, service, autoscaler]
+        if owner:
+            for o in objects:
+                o["metadata"]["ownerReferences"] = [owner]
+        return objects
+
+    def _deployment(self, name, namespace, spec, labels, http) -> Dict[str, Any]:
         container: Dict[str, Any] = {
             "name": name,
             "image": str(spec.image),
@@ -58,20 +80,21 @@ class KedaEngine(ServingEngine):
         if spec.serviceAccount:
             pod_spec["serviceAccountName"] = spec.serviceAccount
 
-        deployment = {
+        # The HTTP add-on can hold the deployment at 0; a cpu ScaledObject can't.
+        replicas = spec.scaling.minScale if http else max(spec.scaling.minScale, 1)
+        return {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
             "metadata": {"name": name, "namespace": namespace, "labels": labels},
             "spec": {
-                "replicas": max(spec.scaling.minScale, 0),
+                "replicas": replicas,
                 "selector": {"matchLabels": {"app": name}},
-                "template": {
-                    "metadata": {"labels": labels},
-                    "spec": pod_spec,
-                },
+                "template": {"metadata": {"labels": labels}, "spec": pod_spec},
             },
         }
-        service = {
+
+    def _service(self, name, namespace, spec, labels) -> Dict[str, Any]:
+        return {
             "apiVersion": "v1",
             "kind": "Service",
             "metadata": {"name": name, "namespace": namespace, "labels": labels},
@@ -80,38 +103,58 @@ class KedaEngine(ServingEngine):
                 "ports": [{"port": spec.port, "targetPort": spec.port}],
             },
         }
-        scaled_object = {
+
+    def _http_scaled_object(self, name, namespace, spec, labels) -> Dict[str, Any]:
+        host = spec.ingress.host or f"{name}.{namespace}"
+        if spec.scaling.metric == "rps":
+            scaling_metric = {
+                "requestRate": {
+                    "granularity": "1s",
+                    "targetValue": spec.scaling.target,
+                    "window": "1m",
+                }
+            }
+        else:  # concurrency
+            scaling_metric = {"concurrency": {"targetValue": spec.scaling.target}}
+
+        return {
+            "apiVersion": "http.keda.sh/v1alpha1",
+            "kind": "HTTPScaledObject",
+            "metadata": {"name": name, "namespace": namespace, "labels": labels},
+            "spec": {
+                "hosts": [host],
+                "scaleTargetRef": {
+                    "name": name,
+                    "kind": "Deployment",
+                    "apiVersion": "apps/v1",
+                    "service": name,
+                    "port": spec.port,
+                },
+                "replicas": {"min": spec.scaling.minScale, "max": spec.scaling.maxScale or 10},
+                "scaledownPeriod": 300,
+                "scalingMetric": scaling_metric,
+            },
+        }
+
+    def _cpu_scaled_object(self, name, namespace, spec, labels) -> Dict[str, Any]:
+        return {
             "apiVersion": "keda.sh/v1alpha1",
             "kind": "ScaledObject",
             "metadata": {"name": name, "namespace": namespace, "labels": labels},
             "spec": {
                 "scaleTargetRef": {"name": name},
-                # A cpu/memory-only trigger cannot scale to zero, and KEDA's
-                # admission webhook rejects minReplicaCount=0 in that case. Floor
-                # it at 1 until the request-driven (keda-http-add-on) path lands.
+                # A cpu/memory trigger cannot scale to zero; KEDA rejects min 0.
                 "minReplicaCount": max(spec.scaling.minScale, 1),
                 "maxReplicaCount": spec.scaling.maxScale or 10,
                 "triggers": [
                     {
                         "type": "cpu",
                         "metricType": "Utilization",
-                        "metadata": {
-                            "value": str(
-                                spec.scaling.target
-                                if spec.scaling.metric == "cpu"
-                                else 80
-                            )
-                        },
+                        "metadata": {"value": str(spec.scaling.target)},
                     }
                 ],
             },
         }
-
-        objects = [deployment, service, scaled_object]
-        if owner:
-            for o in objects:
-                o["metadata"]["ownerReferences"] = [owner]
-        return objects
 
     def url_for(self, name: str, namespace: str) -> str:
         return f"http://{name}.{namespace}.svc.cluster.local"

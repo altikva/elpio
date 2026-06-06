@@ -70,6 +70,14 @@ tasks:
     cmds:
       - kubectl apply -f deploy/tekton
 
+  keda-http-install:
+    desc: Install the keda-http-add-on (request-driven scale-to-zero for the keda engine)
+    cmds:
+      - helm repo add kedacore https://kedacore.github.io/charts
+      - helm repo update kedacore
+      - helm upgrade --install keda-add-ons-http kedacore/keda-add-ons-http
+          --namespace keda --create-namespace --wait
+
   e2e-up:
     desc: Provision kind + Knative/KEDA + Elpio CRDs, ready for `task e2e`
     cmds:

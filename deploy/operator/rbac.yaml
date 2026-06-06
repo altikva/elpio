@@ -48,6 +48,9 @@ rules:
   - apiGroups: ["keda.sh"]
     resources: ["scaledobjects"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["http.keda.sh"]
+    resources: ["httpscaledobjects"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Built-ins used by the KEDA path + GC
   - apiGroups: ["apps"]
     resources: ["deployments"]
