@@ -79,10 +79,11 @@ tasks:
           --namespace keda --create-namespace --wait
 
   e2e-up:
-    desc: Provision kind + Knative/KEDA + Elpio CRDs, ready for `task e2e`
+    desc: Provision kind + Knative/KEDA + keda-http + Elpio CRDs, ready for `task e2e`
     cmds:
       - task: kind-up
       - task: knative-install
+      - task: keda-http-install
       - kubectl apply -f deploy/crds
       - kubectl apply -f deploy/operator
 

@@ -1,0 +1,24 @@
+# A scale-to-zero ElpioService on the KEDA engine (ELPIO_ENGINE=keda).
+# Concurrency metric => the operator renders an HTTPScaledObject (keda-http-add-on),
+# so it genuinely scales 0 <-> N on request load through the add-on interceptor.
+#   task keda-http-install            # install the add-on first
+#   ELPIO_ENGINE=keda elpio operator  # run the operator on the keda engine
+#   elpio deploy -f examples/hello-keda.yaml
+apiVersion: elpio.io/v1alpha1
+kind: ElpioService
+metadata:
+  name: hello-keda
+  namespace: default
+spec:
+  image:
+    repository: ghcr.io/knative/helloworld-go
+    tag: latest
+  port: 8080
+  env:
+    - name: TARGET
+      value: "Elpio (KEDA)"
+  scaling:
+    minScale: 0          # scale to zero when idle
+    maxScale: 10
+    target: 100          # 100 concurrent requests per replica
+    metric: concurrency  # request-driven => HTTPScaledObject
