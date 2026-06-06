@@ -105,6 +105,9 @@ def test_nats_jetstream_roundtrip():
     from elpio.dispatcher.brokers import NatsBroker
 
     broker = NatsBroker(addr, QUEUE)
-    msg = broker.poll()
-    assert msg is not None and msg.body == {"task": "a"}
-    broker.ack(msg)
+    try:
+        msg = broker.poll()
+        assert msg is not None and msg.body == {"task": "a"}
+        broker.ack(msg)
+    finally:
+        broker.close()  # drain the connection so no coroutine outlives the loop

@@ -17,6 +17,11 @@ on:
 permissions:
   contents: read
 
+# Force Node 24 for actions that have no Node-24 major yet (docker/*,
+# azure/setup-helm, arduino/setup-task) so they don't hit the Node 20 deprecation.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest

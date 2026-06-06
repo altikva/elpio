@@ -168,6 +168,22 @@ class NatsBroker(Broker):
         if raw is not None:
             self._loop.run_until_complete(raw.ack())
 
+    def close(self) -> None:
+        """Close the NATS connection, then the loop.
+
+        Closing the connection first stops the client's background flusher; doing
+        it the other way round leaves a coroutine to be GC'd against a closed loop
+        ("Event loop is closed"). Safe to call more than once.
+        """
+        if self._loop.is_closed():
+            return
+        try:
+            self._loop.run_until_complete(self._nc.close())
+        except Exception:
+            pass
+        finally:
+            self._loop.close()
+
 
 # Broker registry — keyed by ELPIO_BROKER_TYPE. Each class lazily imports its
 # client library, so referencing the registry doesn't require every dependency.
