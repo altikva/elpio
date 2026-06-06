@@ -19,7 +19,7 @@ spec:
       serviceAccountName: elpio-operator
       containers:
         - name: operator
-          image: ghcr.io/altikva/elpio/operator:latest
+          image: ghcr.io/altikva/elpio:latest
           imagePullPolicy: IfNotPresent
           command: ["elpio", "operator"]
           env:
