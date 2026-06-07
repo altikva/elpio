@@ -28,7 +28,14 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # bind/escalate is a privilege-escalation grant: restrict it to the built-in
+  # ClusterRoles the Tenant reconciler binds (admin/edit/view), so the operator
+  # can never grant an arbitrary cluster role.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    verbs: ["bind", "escalate"]
+    resourceNames: ["admin", "edit", "view"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
