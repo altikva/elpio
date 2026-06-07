@@ -54,6 +54,10 @@ class NullIdentityProvider(IdentityProvider):
 # so the OIDC provider is unit-testable without a cluster.
 SarReviewer = Callable[[Principal, str, str], bool]
 
+# In a "<group>/<resource>" string, this alias selects the core API group, which
+# Kubernetes represents as the empty string "".
+_CORE_GROUP_ALIAS = "core"
+
 
 def _jwks_uri_is_safe(jwks_uri: str) -> bool:
     """https is required; plain http is tolerated only for local dev hosts."""
@@ -153,7 +157,7 @@ class OIDCIdentityProvider(IdentityProvider):
     def _split_resource(self, resource: str) -> tuple[str, str]:
         if "/" in resource:
             group, res = resource.split("/", 1)
-            return ("" if group == "core" else group), res
+            return ("" if group == _CORE_GROUP_ALIAS else group), res
         return self._default_group, resource
 
     def _cluster_sar(self, principal: Principal, verb: str, resource: str) -> bool:
