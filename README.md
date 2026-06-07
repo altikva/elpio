@@ -46,6 +46,13 @@ spec:
   scaling: { minScale: 0, maxScale: 10, target: 100, metric: concurrency }
 ```
 
+The operator renders the engine objects, owns them (so they garbage-collect with the CR), and
+writes back `.status`:
+
+<p align="center">
+  <img src="assets/img/elpio-operator.svg" alt="elpio operator reconcile log: rendering Knative Services and reporting success" width="720">
+</p>
+
 | CRD | Equivalent | Engine |
 |-----|-----------|--------|
 | `ElpioService` | Cloud Run | Knative Serving (default) or KEDA |
@@ -122,6 +129,10 @@ elpio status hello                 # readiness, conditions, URL
 elpio logs hello                   # stream the service's logs
 elpio delete hello
 ```
+
+<p align="center">
+  <img src="assets/img/elpio-usage.svg" alt="elpio services and elpio status listing two ready ElpioServices with their engine and URL" width="800">
+</p>
 
 Working from a clone instead? `task e2e-up` provisions kind + Knative/KEDA, and
 `task operator-run` runs the operator locally (`kopf run -m elpio.operator.handlers`).
