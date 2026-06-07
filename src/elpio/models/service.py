@@ -81,6 +81,7 @@ class Ingress(BaseModel):
     enabled: bool = True
     visibility: Literal["external", "cluster-local"] = "external"
     host: Optional[str] = None
+    tls: bool = False
 
 
 class ElpioServiceSpec(BaseModel):

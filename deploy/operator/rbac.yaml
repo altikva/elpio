@@ -47,9 +47,13 @@ rules:
   - apiGroups: ["batch"]
     resources: ["cronjobs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Knative Serving (default engine)
+  # Knative Serving (default engine) + custom-domain mapping
   - apiGroups: ["serving.knative.dev"]
-    resources: ["services"]
+    resources: ["services", "domainmappings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # cert-manager Certificates for automatic TLS on custom domains
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # KEDA (alternative engine)
   - apiGroups: ["keda.sh"]

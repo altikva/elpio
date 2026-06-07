@@ -105,6 +105,9 @@ class KedaEngine(ServingEngine):
         }
 
     def _http_scaled_object(self, name, namespace, spec, labels) -> Dict[str, Any]:
+        # NB: custom-domain + automatic-TLS (DomainMapping / cert-manager
+        # Certificate) is a Knative-engine feature. The KEDA path only uses
+        # ingress.host as the interceptor routing host and ignores ingress.tls.
         host = spec.ingress.host or f"{name}.{namespace}"
         if spec.scaling.metric == "rps":
             scaling_metric = {
