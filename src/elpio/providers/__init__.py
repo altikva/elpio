@@ -19,7 +19,7 @@ from elpio.providers.identity import (
     OIDCIdentityProvider,
     Principal,
 )
-from elpio.providers.state import InMemoryStateStore, StateStore
+from elpio.providers.state import FileStateStore, InMemoryStateStore, StateStore
 
 __all__ = [
     "IdentityProvider",
@@ -28,4 +28,5 @@ __all__ = [
     "Principal",
     "StateStore",
     "InMemoryStateStore",
+    "FileStateStore",
 ]
