@@ -55,6 +55,9 @@ _COMMANDS = [
     ("install", "Apply the CRDs + operator to the current kube-context"),
     ("deploy", "Create or update an ElpioService from a YAML file"),
     ("services", "List ElpioServices"),
+    ("status", "Show an ElpioService's readiness (ready/engine/url)"),
+    ("logs", "Tail logs for an ElpioService's pods (-f to follow)"),
+    ("delete", "Delete an ElpioService by name or from a YAML file"),
     ("operator", "Run the Elpio operator (kopf) in the foreground"),
     ("version", "Print the Elpio version"),
 ]
