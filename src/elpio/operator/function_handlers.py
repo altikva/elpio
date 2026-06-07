@@ -44,13 +44,14 @@ def _build_conditions(status, ok: bool, reason: str, message: str):
 @kopf.on.create(GROUP, VERSION, PLURAL)
 @kopf.on.update(GROUP, VERSION, PLURAL)
 @kopf.on.resume(GROUP, VERSION, PLURAL)
-def reconcile_function(spec, meta, name, namespace, patch, logger, status, **_):
+def reconcile_function(spec, meta, name, namespace, patch, logger, status, body, **_):
     """Kick off the build. The ElpioService is created later, once it succeeds."""
     parsed = FunctionSpec.from_cr(dict(spec))
     owner = owner_reference("ElpioFunction", name, meta["uid"])
 
     apply_object(render_pipeline_run(name, namespace, parsed, owner=owner))
     logger.info("started build %s-build for function %s/%s", name, namespace, name)
+    kopf.event(body, type="Normal", reason="BuildStarted", message=f"building image {parsed.image}")
 
     patch.status["image"] = parsed.image
     patch.status["build"] = f"{name}-build"
@@ -62,7 +63,7 @@ def reconcile_function(spec, meta, name, namespace, patch, logger, status, **_):
 
 
 @kopf.timer(GROUP, VERSION, PLURAL, interval=15.0)
-def settle_function(spec, status, meta, name, namespace, patch, logger, **_):
+def settle_function(spec, status, meta, name, namespace, patch, logger, body, **_):
     """Poll the build; publish the ElpioService only once it has succeeded."""
     if status.get("serviceApplied"):
         return
@@ -80,10 +81,12 @@ def settle_function(spec, status, meta, name, namespace, patch, logger, **_):
         patch.status["phase"] = "Ready"
         patch.status["ready"] = True
         patch.status["conditions"] = _build_conditions(status, True, "Reconciled", f"serves {name}")
+        kopf.event(body, type="Normal", reason="Reconciled", message=f"published ElpioService {name}")
     elif action == "fail":
         patch.status["phase"] = "BuildFailed"
         patch.status["ready"] = False
         patch.status["conditions"] = _build_conditions(status, False, "BuildFailed", "build pipeline failed")
+        kopf.warn(body, reason="BuildFailed", message="build pipeline failed")
     else:
         patch.status["phase"] = "Building"
         patch.status["conditions"] = _build_conditions(status, False, "Building", "build in progress")
