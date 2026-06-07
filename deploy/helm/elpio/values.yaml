@@ -22,7 +22,11 @@ operator:
 # policy). Requires cert-manager in the cluster.
 webhook:
   enabled: true
-  allowedRegistries: ""   # comma-separated; empty = allow all
+  # Comma-separated list of allowed image registry prefixes. Empty (the default)
+  # means ALL registries are accepted, so the base install does not restrict
+  # images. Production installs should set an explicit allowlist, for example:
+  # "ghcr.io/altikva,registry.mycorp.io".
+  allowedRegistries: ""
 
 # ElpioFunction build support: installs the elpio-buildpacks Tekton Pipeline.
 # Needs Tekton Pipelines in the cluster. Off by default.
