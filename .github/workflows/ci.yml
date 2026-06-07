@@ -111,11 +111,22 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      # kind-action makes the cluster (named "elpio-dev" by the config), so the
-      # `task kind-up` step is skipped below and its sub-steps are run directly.
+      # Install the kind/kubectl tooling only; create the cluster ourselves with
+      # a retry, since kind cluster bring-up flakes intermittently on hosted
+      # runners (image pulls, control-plane wait) and we don't want that to red a
+      # non-blocking leg. The cluster name ("elpio-dev") comes from the config.
       - uses: helm/kind-action@v1
         with:
-          config: tests/e2e/kind-config.yaml
+          install_only: true
+      - name: Create the kind cluster (retry on bring-up flake)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 8
+          max_attempts: 3
+          retry_wait_seconds: 20
+          command: |
+            kind delete cluster --name elpio-dev 2>/dev/null || true
+            kind create cluster --config tests/e2e/kind-config.yaml --wait 120s
       - run: pip install -e '.[dev]'
       - name: Install Knative + KEDA + keda-http add-on
         run: task knative-install keda-http-install
