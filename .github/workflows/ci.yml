@@ -113,6 +113,10 @@ jobs:
       - name: Apply the Elpio CRDs + operator RBAC
         run: |
           kubectl apply -f deploy/crds
+          # rbac.yaml creates the elpio-system namespace; apply it before the
+          # rest, since `kubectl apply -f <dir>` orders files alphabetically and
+          # deployment.yaml (namespaced) would otherwise be applied first.
+          kubectl apply -f deploy/operator/rbac.yaml
           kubectl apply -f deploy/operator
       - name: Run the operator locally (keda engine) in the background
         env:
