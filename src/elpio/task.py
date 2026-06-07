@@ -68,6 +68,37 @@ def _dispatcher_env(name: str, namespace: str, spec: TaskSpec) -> List[Dict[str,
     ]
     if spec.rateLimit is not None:
         env.append({"name": "ELPIO_RATE_LIMIT", "value": str(spec.rateLimit)})
+    env.extend(_broker_auth_env(spec))
+    return env
+
+
+def _broker_auth_env(spec: TaskSpec) -> List[Dict[str, str]]:
+    """Map the broker auth/TLS spec to dispatcher env vars.
+
+    Secrets are passed by reference: the ``*_ENV`` vars carry the *name* of the
+    env var the dispatcher pod gets from a Secret, never the secret value. The
+    operator is responsible for projecting that Secret into the pod (the
+    referenced var must exist at runtime); only the var name flows through here.
+    """
+    auth = spec.broker.auth
+    tls = spec.broker.tls
+    env: List[Dict[str, str]] = []
+    if auth.username:
+        env.append({"name": "ELPIO_BROKER_USERNAME", "value": auth.username})
+    if auth.usernameEnv:
+        env.append({"name": "ELPIO_BROKER_USERNAME_ENV", "value": auth.usernameEnv})
+    if auth.passwordEnv:
+        env.append({"name": "ELPIO_BROKER_PASSWORD_ENV", "value": auth.passwordEnv})
+    if auth.token:
+        env.append({"name": "ELPIO_BROKER_TOKEN", "value": auth.token})
+    if auth.tokenEnv:
+        env.append({"name": "ELPIO_BROKER_TOKEN_ENV", "value": auth.tokenEnv})
+    if tls.enabled:
+        env.append({"name": "ELPIO_BROKER_TLS", "value": "true"})
+        if tls.caCert:
+            env.append({"name": "ELPIO_BROKER_TLS_CA", "value": tls.caCert})
+        if tls.insecureSkipVerify:
+            env.append({"name": "ELPIO_BROKER_TLS_INSECURE", "value": "true"})
     return env
 
 

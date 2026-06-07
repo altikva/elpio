@@ -1,0 +1,36 @@
+# An ElpioTask that reaches a broker over TLS with credentials pulled from a
+# Secret, never inline in the CR.
+#
+# Credential precedence (per value):
+#   1. broker.auth.*Env names an env var read at connect time and wins.
+#   2. broker.auth.username / broker.auth.token are inline fallbacks for
+#      non-sensitive values only.
+#   Passwords are env-only: there is no inline password field, so a password
+#   never lands in the spec. The named env vars are projected into the
+#   dispatcher pod from a Secret, for example with envFrom or a secretKeyRef.
+#
+# TLS:
+#   broker.tls.enabled turns on TLS. broker.tls.caCert is a PEM bundle path
+#   mounted into the dispatcher pod. broker.tls.insecureSkipVerify disables
+#   verification and is for local/dev clusters only; leave it false in prod.
+apiVersion: elpio.io/v1alpha1
+kind: ElpioTask
+metadata:
+  name: emails
+  namespace: default
+spec:
+  broker:
+    type: rabbitmq
+    address: rabbitmq.infra:5671
+    auth:
+      usernameEnv: BROKER_USER     # env var name, fed from a Secret
+      passwordEnv: BROKER_PASSWORD # env var name, fed from a Secret
+    tls:
+      enabled: true
+      caCert: /etc/elpio/broker-ca/ca.pem
+  queue: emails
+  handlerService: mailer
+  retry:
+    maxAttempts: 5
+  minReplicas: 0
+  maxReplicas: 10

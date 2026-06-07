@@ -31,9 +31,20 @@ def build_from_env() -> Dispatcher:
     rate_raw = os.getenv("ELPIO_RATE_LIMIT")
     rate = int(rate_raw) if rate_raw else None
 
-    from elpio.dispatcher.brokers import make_broker
+    from elpio.dispatcher.brokers import (
+        credentials_from_env,
+        make_broker,
+        tls_from_env,
+    )
 
-    broker = make_broker(broker_type, address, queue, dlq=os.getenv("ELPIO_DLQ"))
+    broker = make_broker(
+        broker_type,
+        address,
+        queue,
+        dlq=os.getenv("ELPIO_DLQ"),
+        creds=credentials_from_env(),
+        tls=tls_from_env(),
+    )
     return Dispatcher(broker, handler, max_attempts=max_attempts, rate_limit=rate)
 
 
