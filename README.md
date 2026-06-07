@@ -58,6 +58,20 @@ spec:
 The serving engine is a **strategy** (`ELPIO_ENGINE=knative|keda`) behind one stable CRD —
 Knative for the highest Cloud Run parity, KEDA for a lighter footprint.
 
+## Security
+
+A few install-time knobs harden a deployment:
+
+- **Restrict images.** Set `webhook.allowedRegistries` to a comma-separated allowlist (for
+  example, `ghcr.io/altikva,registry.mycorp.io`) so the admission webhook only admits images
+  from registries you trust. Leaving it empty accepts images from any registry, which is the
+  default for the base install.
+- **Admission webhook needs cert-manager.** The webhook serves over TLS, so the cluster must
+  have cert-manager installed for `webhook.enabled: true` to work.
+- **Management API requires OIDC.** The fleet management API fails closed: without
+  `ELPIO_OIDC_JWKS_URI` (and the matching issuer and audience) configured, it rejects requests
+  rather than running unauthenticated.
+
 ## Quickstart
 
 ```bash
