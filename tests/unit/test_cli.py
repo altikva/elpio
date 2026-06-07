@@ -91,3 +91,93 @@ def test_install_applies_namespace_rbac_before_the_operator(monkeypatch):
     targets = [os.path.basename(a[a.index("-f") + 1].rstrip("/")) for a in calls if "-f" in a]
     # CRDs, then the namespace+RBAC, then the operator Deployment dir.
     assert targets == ["crds", "rbac.yaml", "operator"]
+
+
+def _record_kubectl(monkeypatch):
+    """Monkeypatch ``subprocess.run`` to a recorder; return the call list."""
+    calls = []
+
+    def fake_run(argv, check=False, **kw):
+        calls.append(list(argv))
+
+        class _Done:
+            returncode = 0
+
+        return _Done()
+
+    monkeypatch.setattr("elpio.cli.subprocess.run", fake_run)
+    return calls
+
+
+def test_status_gets_the_service_with_readiness_columns(monkeypatch):
+    calls = _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["status", "hello", "-n", "demo"])
+    assert res.exit_code == 0
+
+    argv = calls[0]
+    assert argv[:5] == ["kubectl", "get", "elpioservice.elpio.io", "hello", "-n"]
+    assert "demo" in argv
+    out_flag = argv[argv.index("-o") + 1]
+    for col in (".status.ready", ".status.engine", ".status.url"):
+        assert col in out_flag
+    assert BANNER_MARK in res.stderr  # banner still on stderr
+    assert res.stdout == ""  # stdout stays clean (kubectl owns it)
+
+
+def test_status_defaults_namespace_to_default(monkeypatch):
+    calls = _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["status", "hello"])
+    assert res.exit_code == 0
+    argv = calls[0]
+    assert argv[argv.index("-n") + 1] == "default"
+
+
+def test_logs_selects_pods_by_service_label(monkeypatch):
+    calls = _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["logs", "hello", "-n", "demo"])
+    assert res.exit_code == 0
+    argv = calls[0]
+    assert argv[:2] == ["kubectl", "logs"]
+    assert "-l" in argv and argv[argv.index("-l") + 1] == "elpio.io/service=hello"
+    assert "--all-containers" in argv
+    assert argv[argv.index("-n") + 1] == "demo"
+    assert "--follow" not in argv  # not following by default
+
+
+def test_logs_follow_flag_adds_follow(monkeypatch):
+    calls = _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["logs", "hello", "-f"])
+    assert res.exit_code == 0
+    assert "--follow" in calls[0]
+
+
+def test_delete_by_name_targets_the_named_service(monkeypatch):
+    calls = _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["delete", "hello", "-n", "demo"])
+    assert res.exit_code == 0
+    argv = calls[0]
+    assert argv[:4] == ["kubectl", "delete", "elpioservice.elpio.io", "hello"]
+    assert argv[argv.index("-n") + 1] == "demo"
+
+
+def test_delete_by_file_uses_kubectl_delete_f(monkeypatch, tmp_path):
+    manifest = tmp_path / "svc.yaml"
+    manifest.write_text("kind: ElpioService\n")
+    calls = _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["delete", "-f", str(manifest)])
+    assert res.exit_code == 0
+    assert calls[0] == ["kubectl", "delete", "-f", str(manifest)]
+
+
+def test_delete_without_name_or_file_errors(monkeypatch):
+    _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["delete"])
+    assert res.exit_code != 0
+
+
+def test_delete_with_both_name_and_file_errors(monkeypatch, tmp_path):
+    manifest = tmp_path / "svc.yaml"
+    manifest.write_text("kind: ElpioService\n")
+    _record_kubectl(monkeypatch)
+    res = CliRunner().invoke(main, ["delete", "hello", "-f", str(manifest)])
+    assert res.exit_code != 0
