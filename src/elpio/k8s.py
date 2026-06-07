@@ -20,7 +20,6 @@ import functools
 import hashlib
 import logging
 import os
-import tempfile
 from typing import Any, Dict, Optional
 
 from kubernetes import config, dynamic
@@ -61,15 +60,45 @@ def connection_kind(record: Optional[Dict[str, Any]]) -> str:
     return "context"
 
 
-def _ca_cert_path(ca_cert: str) -> str:
-    """Deterministic temp path for a CA bundle.
+def _ca_cache_dir() -> str:
+    """Per-user CA cache directory (mode 0700), created on demand.
 
-    The same ``ca_cert`` always maps to the same file, so reconnecting to a
-    cluster reuses one file instead of accumulating a new ``NamedTemporaryFile``
-    on every call. Pure (no I/O) so it's unit-testable.
+    Trust-anchor material must not live in a world-writable dir like /tmp, where
+    another user could pre-create or symlink the file and poison the cluster's
+    TLS trust anchor.
+    """
+    path = os.path.join(os.path.expanduser("~"), ".cache", "elpio", "ca")
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    return path
+
+
+def _ca_cert_path(ca_cert: str) -> str:
+    """Deterministic filename for a CA bundle within the per-user cache dir.
+
+    The same ``ca_cert`` always maps to the same file, so reconnecting reuses one
+    file instead of accumulating temp files.
     """
     digest = hashlib.sha256(ca_cert.encode()).hexdigest()[:16]
-    return os.path.join(tempfile.gettempdir(), f"elpio-ca-{digest}.crt")
+    return os.path.join(_ca_cache_dir(), f"elpio-ca-{digest}.crt")
+
+
+def _materialize_ca(ca_cert: str) -> str:
+    """Write the CA to a private file and return its path.
+
+    Created with ``O_CREAT|O_EXCL|O_NOFOLLOW`` at mode 0600, so a hostile
+    pre-existing or symlinked file can't be trusted as the CA. If the file
+    already exists, its contents are verified against ``ca_cert`` before reuse.
+    """
+    path = _ca_cert_path(ca_cert)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(ca_cert)
+    except FileExistsError:
+        with open(path, "r") as handle:
+            if handle.read() != ca_cert:
+                raise RuntimeError(f"CA cache file {path} does not match the expected bundle")
+    return path
 
 
 @functools.lru_cache(maxsize=None)
@@ -83,11 +112,7 @@ def _client_from_token(
     cfg.api_key = {"authorization": token}
     cfg.api_key_prefix = {"authorization": "Bearer"}
     if ca_cert:
-        ca_path = _ca_cert_path(ca_cert)
-        if not os.path.exists(ca_path):
-            with open(ca_path, "w") as handle:
-                handle.write(ca_cert)
-        cfg.ssl_ca_cert = ca_path
+        cfg.ssl_ca_cert = _materialize_ca(ca_cert)
     elif insecure:
         # Explicit opt-in only (local/dev). Never the silent default.
         logger.warning("TLS verification disabled for %s (insecure=true)", server)

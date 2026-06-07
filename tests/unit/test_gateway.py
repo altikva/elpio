@@ -7,7 +7,8 @@
 # Description: Unit tests for the gateway.
 
 import os
-import tempfile
+
+import pytest
 
 from elpio.api.gateway import FleetRegistry, KubeCRGateway
 from elpio.k8s import _ca_cert_path, connection_kind
@@ -103,13 +104,29 @@ def test_connection_kind_classification():
     assert connection_kind({"server": "https://a"}) == "context"  # token missing
 
 
-def test_ca_cert_path_is_deterministic_per_ca():
+def test_ca_cert_path_is_deterministic_and_per_user():
     ca = "-----BEGIN CERTIFICATE-----\nPEMDATA\n-----END CERTIFICATE-----\n"
-    # Same CA → same path every call (so we reuse one file, not leak temps).
-    assert _ca_cert_path(ca) == _ca_cert_path(ca)
-    # Different CA → different path.
-    assert _ca_cert_path(ca) != _ca_cert_path(ca + "x")
+    assert _ca_cert_path(ca) == _ca_cert_path(ca)  # same CA → same file
+    assert _ca_cert_path(ca) != _ca_cert_path(ca + "x")  # different CA → different file
     path = _ca_cert_path(ca)
-    assert path.endswith(".crt")
-    assert os.path.basename(path).startswith("elpio-ca-")
-    assert os.path.dirname(path) == tempfile.gettempdir()
+    assert path.endswith(".crt") and os.path.basename(path).startswith("elpio-ca-")
+    # Trust material lives under a per-user cache dir, never world-writable /tmp.
+    expected_dir = os.path.join(os.path.expanduser("~"), ".cache", "elpio", "ca")
+    assert os.path.dirname(path) == expected_dir
+    assert oct(os.stat(expected_dir).st_mode & 0o777) == "0o700"
+
+
+def test_materialize_ca_writes_private_and_verifies_on_reuse(tmp_path, monkeypatch):
+    from elpio import k8s
+
+    monkeypatch.setattr(k8s, "_ca_cache_dir", lambda: str(tmp_path))
+    ca = "CA-BUNDLE-CONTENT"
+    p = k8s._materialize_ca(ca)
+    assert open(p).read() == ca
+    assert oct(os.stat(p).st_mode & 0o777) == "0o600"  # private file
+    assert k8s._materialize_ca(ca) == p  # reuse, contents match → ok
+    # A tampered cache file is rejected rather than trusted.
+    with open(p, "w") as fh:
+        fh.write("ATTACKER-CA")
+    with pytest.raises(RuntimeError, match="does not match"):
+        k8s._materialize_ca(ca)
