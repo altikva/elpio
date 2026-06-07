@@ -16,7 +16,7 @@ per-CRD handlers only carry their own status/condition logic.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Optional
 
 from elpio.k8s import apply_object
 from elpio.models.service import GROUP, VERSION
@@ -47,3 +47,20 @@ def apply_all(objects: Iterable[Dict[str, Any]], logger: Any, label: str) -> int
         )
         count += 1
     return count
+
+
+def child_ready(child: Optional[Dict[str, Any]]) -> bool:
+    """True when a child object reports a ``Ready`` condition of ``"True"``.
+
+    Knative Services and KEDA ScaledObject/HTTPScaledObject all expose a
+    ``status.conditions[]`` array with a ``Ready`` condition, so the same read
+    works across engines. Returns ``False`` when the child is missing, has no
+    status yet, or has no ``Ready`` condition (i.e. it is still progressing).
+    """
+    if not child:
+        return False
+    conditions = ((child.get("status") or {}).get("conditions")) or []
+    for cond in conditions:
+        if isinstance(cond, dict) and cond.get("type") == "Ready":
+            return cond.get("status") == "True"
+    return False

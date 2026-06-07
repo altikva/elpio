@@ -13,16 +13,53 @@ server-side apply them with the ElpioService as their owner — so Kubernetes
 garbage-collects the children when the ElpioService is deleted (no explicit
 teardown handler needed). This is a declarative operator model: continuous
 reconciliation rather than one-shot, imperative ``kubectl apply``.
+
+``Ready`` mirrors the rendered child's own readiness rather than being set
+optimistically: the apply only kicks the engine, so right after it the Knative
+Service / KEDA autoscaler is still progressing. ``reconcile`` reports ``Ready``
+only once the child says so, and ``settle_service`` re-checks on a timer until
+it converges.
 """
 
 from __future__ import annotations
 
+from typing import Tuple
+
 import kopf
 
-from elpio.engines.base import get_engine
+from elpio.engines.base import ServingEngine, get_engine
+from elpio.k8s import get_object
 from elpio.models.service import GROUP, PLURAL, VERSION, ElpioServiceSpec
-from elpio.operator.common import apply_all, owner_reference
+from elpio.operator.common import apply_all, child_ready, owner_reference
 from elpio.status import condition, merge_conditions, now_rfc3339
+
+
+def _primary_child_ref(engine: ServingEngine, spec: ElpioServiceSpec) -> Tuple[str, str]:
+    """``(api_version, kind)`` of the child whose readiness gates ``Ready``.
+
+    Knative serves through a single ``Service``; KEDA's request-driven path
+    fronts the Deployment with an ``HTTPScaledObject`` while the cpu path uses a
+    plain ``ScaledObject``. Each exposes a ``Ready`` condition we can read back.
+    """
+    if engine.name == "keda":
+        if spec.scaling.metric in ("concurrency", "rps"):
+            return "http.keda.sh/v1alpha1", "HTTPScaledObject"
+        return "keda.sh/v1alpha1", "ScaledObject"
+    return "serving.knative.dev/v1", "Service"
+
+
+def _readiness_conditions(status, ready: bool, engine_name: str):
+    if ready:
+        return merge_conditions(
+            status.get("conditions"),
+            [condition("Ready", True, reason="Reconciled", message=f"served by the {engine_name} engine")],
+            now_rfc3339(),
+        )
+    return merge_conditions(
+        status.get("conditions"),
+        [condition("Ready", False, reason="Progressing", message=f"waiting for the {engine_name} child to become Ready")],
+        now_rfc3339(),
+    )
 
 
 @kopf.on.create(GROUP, VERSION, PLURAL)
@@ -36,16 +73,32 @@ def reconcile(spec, meta, name, namespace, patch, logger, status, **_):
     objects = engine.render(name, namespace, parsed, owner=owner)
     apply_all(objects, logger, f"{engine.name} engine")
 
+    api_version, kind = _primary_child_ref(engine, parsed)
+    child = get_object(api_version, kind, name, namespace)
+    ready = child_ready(child)
+
     patch.status["engine"] = engine.name
     patch.status["url"] = engine.url_for(name, namespace)
     patch.status["observedGeneration"] = meta.get("generation")
-    patch.status["ready"] = True
-    patch.status["conditions"] = merge_conditions(
-        status.get("conditions"),
-        [condition("Ready", True, reason="Reconciled", message=f"served by the {engine.name} engine")],
-        now_rfc3339(),
-    )
-    return {"engine": engine.name, "objects": len(objects)}
+    patch.status["ready"] = ready
+    patch.status["conditions"] = _readiness_conditions(status, ready, engine.name)
+    return {"engine": engine.name, "objects": len(objects), "ready": ready}
+
+
+@kopf.timer(GROUP, VERSION, PLURAL, interval=15.0)
+def settle_service(spec, status, name, namespace, patch, logger, **_):
+    """Re-check the rendered child and converge ``Ready`` as it comes up."""
+    parsed = ElpioServiceSpec.from_cr(dict(spec))
+    engine = get_engine()
+    api_version, kind = _primary_child_ref(engine, parsed)
+    child = get_object(api_version, kind, name, namespace)
+    ready = child_ready(child)
+
+    if ready == status.get("ready"):
+        return
+    logger.info("ElpioService %s/%s child %s readiness -> %s", namespace, name, kind, ready)
+    patch.status["ready"] = ready
+    patch.status["conditions"] = _readiness_conditions(status, ready, engine.name)
 
 
 @kopf.on.delete(GROUP, VERSION, PLURAL)
