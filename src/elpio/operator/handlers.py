@@ -17,25 +17,12 @@ reconciliation rather than one-shot, imperative ``kubectl apply``.
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
 import kopf
 
 from elpio.engines.base import get_engine
-from elpio.k8s import apply_object
 from elpio.models.service import GROUP, PLURAL, VERSION, ElpioServiceSpec
+from elpio.operator.common import apply_all, owner_reference
 from elpio.status import condition, merge_conditions, now_rfc3339
-
-
-def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "ElpioService",
-        "name": name,
-        "uid": uid,
-        "controller": True,
-        "blockOwnerDeletion": True,
-    }
 
 
 @kopf.on.create(GROUP, VERSION, PLURAL)
@@ -44,17 +31,10 @@ def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
 def reconcile(spec, meta, name, namespace, patch, logger, status, **_):
     parsed = ElpioServiceSpec.from_cr(dict(spec))
     engine = get_engine()
-    owner = _owner_reference(name, meta["uid"])
+    owner = owner_reference("ElpioService", name, meta["uid"])
 
     objects = engine.render(name, namespace, parsed, owner=owner)
-    for obj in objects:
-        apply_object(obj)
-        logger.info(
-            "reconciled %s/%s via %s engine",
-            obj["kind"],
-            obj["metadata"]["name"],
-            engine.name,
-        )
+    apply_all(objects, logger, f"{engine.name} engine")
 
     patch.status["engine"] = engine.name
     patch.status["url"] = engine.url_for(name, namespace)
