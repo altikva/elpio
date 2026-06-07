@@ -10,7 +10,10 @@
 
 The MutatingWebhookConfiguration POSTs AdmissionReviews to ``/mutate``; the
 allowed-registry list comes from ``ELPIO_ALLOWED_REGISTRIES`` (comma-separated,
-empty = allow all). Run with: ``uvicorn elpio.webhook.server:app``.
+empty = allow all). Two opt-in checks are toggled by env vars, both off by
+default: ``ELPIO_BAN_LATEST`` (reject mutable ``:latest`` tags) and
+``ELPIO_REQUIRE_REQUESTS`` (reject services missing CPU/memory requests). Run
+with: ``uvicorn elpio.webhook.server:app``.
 """
 
 from __future__ import annotations
@@ -30,6 +33,10 @@ def _allowed_registries() -> List[str]:
     return [r.strip() for r in raw.split(",") if r.strip()]
 
 
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
     return {"status": "ok"}
@@ -38,7 +45,12 @@ def healthz() -> Dict[str, str]:
 @app.post("/mutate")
 async def mutate(request: Request) -> Dict[str, Any]:
     body = await request.json()
-    return review(body, allowed_registries=_allowed_registries() or None)
+    return review(
+        body,
+        allowed_registries=_allowed_registries() or None,
+        ban_latest=_env_flag("ELPIO_BAN_LATEST"),
+        require_requests=_env_flag("ELPIO_REQUIRE_REQUESTS"),
+    )
 
 
 # Validation shares the same policy (mutating webhooks may also deny).
