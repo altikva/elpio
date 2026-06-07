@@ -98,6 +98,23 @@ spec:
                     host: { type: string }
                     tls: { type: boolean, default: false }
                 serviceAccount: { type: string }
+                traffic:
+                  type: array
+                  description: >-
+                    Knative-style traffic split across revisions. Each entry
+                    sends percent of requests to a named revision or the latest
+                    ready one; percents must sum to 100. Knative engine only.
+                  items:
+                    type: object
+                    required: [percent]
+                    properties:
+                      revisionName: { type: string }
+                      latestRevision: { type: boolean }
+                      percent:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      tag: { type: string }
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

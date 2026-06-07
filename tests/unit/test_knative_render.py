@@ -6,6 +6,9 @@
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Unit tests for the knative render.
 
+import pytest
+from pydantic import ValidationError
+
 from elpio.engines.knative import KnativeEngine
 from elpio.engines.keda import KedaEngine
 from elpio.models.service import ElpioServiceSpec
@@ -95,6 +98,65 @@ def test_knative_host_owner_reference_propagates_to_all_objects():
     owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioService", "name": "api", "uid": "abc"}
     objs = KnativeEngine().render("api", "demo", _host_spec(tls=True), owner=owner)
     assert all(o["metadata"]["ownerReferences"] == [owner] for o in objs)
+
+
+def test_knative_no_traffic_renders_no_explicit_traffic_block():
+    svc = KnativeEngine().render("api", "demo", SPEC)[0]
+    assert "traffic" not in svc["spec"]
+
+
+def test_knative_renders_80_20_traffic_split():
+    spec = ElpioServiceSpec.from_cr(
+        {
+            "image": "x:1",
+            "traffic": [
+                {"revisionName": "api-v1", "percent": 80},
+                {"revisionName": "api-v2", "percent": 20, "tag": "canary"},
+            ],
+        }
+    )
+    svc = KnativeEngine().render("api", "demo", spec)[0]
+    assert svc["spec"]["traffic"] == [
+        {"percent": 80, "revisionName": "api-v1"},
+        {"percent": 20, "revisionName": "api-v2", "tag": "canary"},
+    ]
+
+
+def test_knative_renders_latest_revision_traffic_target():
+    spec = ElpioServiceSpec.from_cr(
+        {"image": "x:1", "traffic": [{"latestRevision": True, "percent": 100}]}
+    )
+    svc = KnativeEngine().render("api", "demo", spec)[0]
+    assert svc["spec"]["traffic"] == [{"percent": 100, "latestRevision": True}]
+
+
+def test_traffic_percents_not_100_raises():
+    with pytest.raises(ValidationError, match="sum to 100"):
+        ElpioServiceSpec.from_cr(
+            {
+                "image": "x:1",
+                "traffic": [
+                    {"revisionName": "api-v1", "percent": 80},
+                    {"revisionName": "api-v2", "percent": 10},
+                ],
+            }
+        )
+
+
+def test_traffic_entry_requires_exactly_one_target():
+    with pytest.raises(ValidationError, match="exactly one"):
+        ElpioServiceSpec.from_cr(
+            {
+                "image": "x:1",
+                "traffic": [
+                    {"revisionName": "api-v1", "latestRevision": True, "percent": 100}
+                ],
+            }
+        )
+    with pytest.raises(ValidationError, match="exactly one"):
+        ElpioServiceSpec.from_cr(
+            {"image": "x:1", "traffic": [{"percent": 100}]}
+        )
 
 
 def _cr(metric, minscale=0):

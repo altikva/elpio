@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # CRD coordinates — referenced by the operator and CLI.
 GROUP = "elpio.io"
@@ -84,6 +84,38 @@ class Ingress(BaseModel):
     tls: bool = False
 
 
+class TrafficTarget(BaseModel):
+    """One entry of a Knative-style traffic split.
+
+    Each entry routes ``percent`` of requests to either a named revision
+    (``revisionName``) or the latest ready revision (``latestRevision: true``),
+    optionally exposing it under a sub-route ``tag``. Exactly one of
+    ``revisionName`` / ``latestRevision`` must be set.
+    """
+
+    revisionName: Optional[str] = None
+    latestRevision: Optional[bool] = None
+    percent: int
+    tag: Optional[str] = None
+
+    @field_validator("percent")
+    @classmethod
+    def _percent_in_range(cls, v: int) -> int:
+        if not 0 <= v <= 100:
+            raise ValueError("percent must be between 0 and 100")
+        return v
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "TrafficTarget":
+        pins = self.revisionName is not None
+        latest = self.latestRevision is not None
+        if pins == latest:
+            raise ValueError(
+                "a traffic entry must set exactly one of revisionName or latestRevision"
+            )
+        return self
+
+
 class ElpioServiceSpec(BaseModel):
     """Desired state of an ElpioService (the CRD ``.spec``)."""
 
@@ -95,11 +127,19 @@ class ElpioServiceSpec(BaseModel):
     scaling: Scaling = Field(default_factory=Scaling)
     ingress: Ingress = Field(default_factory=Ingress)
     serviceAccount: Optional[str] = None
+    traffic: List[TrafficTarget] = Field(default_factory=list)
 
     @field_validator("image", mode="before")
     @classmethod
     def _coerce_image(cls, v):
         return ImageRef.coerce(v)
+
+    @field_validator("traffic")
+    @classmethod
+    def _traffic_sums_to_100(cls, v: List[TrafficTarget]) -> List[TrafficTarget]:
+        if v and sum(t.percent for t in v) != 100:
+            raise ValueError("traffic percents must sum to 100")
+        return v
 
     @classmethod
     def from_cr(cls, spec: Optional[dict]) -> "ElpioServiceSpec":
