@@ -66,6 +66,36 @@ def _revision_replicas() -> int:
     return sum(int(x) for x in out.split()) if out else 0
 
 
+def _ksvc_ready() -> bool:
+    # The route is only programmed (and the cluster-local `hello` Service that
+    # the wake request resolves exists) once the KnativeService is Ready.
+    out = _kubectl(
+        "get", "ksvc", NAME, "-n", NS,
+        "-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}",
+        check=False,
+    )
+    return out == "True"
+
+
+def _wake(url: str) -> None:
+    # The first request after a long idle can briefly 503 while the activator
+    # spins the revision back up, so retry a few times before giving up.
+    last = None
+    for _ in range(6):
+        last = subprocess.run(
+            [
+                "kubectl", "run", "elpio-e2e-curl", "-n", NS, "--rm", "-i",
+                "--restart=Never", "--image=curlimages/curl:8.8.0",
+                "--", "-sS", "-m", "60", url,
+            ],
+            capture_output=True, text=True,
+        )
+        if last.returncode == 0:
+            return
+        time.sleep(5)
+    raise AssertionError(f"wake request never succeeded: rc={last.returncode} stderr={last.stderr!r}")
+
+
 @pytest.fixture(scope="module")
 def deployed():
     _kubectl("apply", "-f", str(HELLO))
@@ -87,15 +117,14 @@ def test_elpioservice_becomes_ready(deployed):
 
 
 def test_request_wakes_then_scales_back_to_zero(deployed):
-    # Start idle (or let it settle to zero first).
+    # The route must be programmed before the cluster-local host resolves;
+    # then let the revision settle to zero.
+    _wait(_ksvc_ready, timeout=180, what="KnativeService Ready (route programmed)")
     _wait(lambda: _revision_replicas() == 0, timeout=180, what="initial scale-to-zero")
 
-    # A single in-cluster request must wake the revision (0 -> N).
-    url = f"http://{NAME}.{NS}.svc.cluster.local"
-    _kubectl(
-        "run", "elpio-e2e-curl", "-n", NS, "--rm", "-i", "--restart=Never",
-        "--image=curlimages/curl:8.8.0", "--", "-sS", "-m", "30", url,
-    )
+    # A single in-cluster request must wake the revision (0 -> N) via the
+    # Knative activator.
+    _wake(f"http://{NAME}.{NS}.svc.cluster.local")
     assert _wait(lambda: _revision_replicas() >= 1, timeout=60, what="scale up on request")
 
     # After the idle window it returns to zero.

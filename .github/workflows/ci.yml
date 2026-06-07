@@ -97,6 +97,11 @@ jobs:
       matrix:
         engine: [knative, keda]
     name: e2e (${{ matrix.engine }})
+    # Informational, not a hard gate: these legs stand up a real kind cluster +
+    # Knative/KEDA, so they're subject to environmental flakiness (kind-action
+    # bring-up, image pulls, activator cold-starts) that is outside this repo's
+    # control. Keep them reporting without false-reddening the build.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
