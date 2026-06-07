@@ -42,6 +42,19 @@ api:
     issuer: ""
     audience: ""
 
+# Spero, the sibling Altikva self-healing agent that supervises Elpio's CRs by
+# reading their status.conditions and running remediations (e.g. unpausing a
+# stuck KEDA ScaledObject). Off by default; enable to run it in-cluster.
+spero:
+  enabled: false
+  image: ghcr.io/altikva/spero:latest
+  # Namespace Spero runs in. Defaults to the release namespace; set to deploy it
+  # somewhere else, e.g. "spero-system".
+  namespace: ""
+  # Name of an existing ConfigMap holding Spero's policy config, mounted into the
+  # Deployment. Empty means Spero uses its built-in defaults.
+  policyConfigMap: ""
+
 rbac:
   create: true
 

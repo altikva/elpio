@@ -1,0 +1,106 @@
+{{- if .Values.spero.enabled }}
+{{- $speroNs := .Values.spero.namespace | default .Release.Namespace }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-spero
+  namespace: {{ $speroNs }}
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+    app: elpio-spero
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-spero
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+rules:
+  # Elpio CRs + their status: Spero reads status.conditions to decide remediations.
+  - apiGroups: ["elpio.io"]
+    resources: ["elpioservices", "elpiofunctions", "elpiotasks"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["elpio.io"]
+    resources: ["elpioservices/status", "elpiofunctions/status", "elpiotasks/status"]
+    verbs: ["get"]
+  # KEDA: read-only, plus patch so the keda-unpause remediation can toggle the
+  # autoscaling.keda.sh/paused annotation on a stuck ScaledObject.
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["http.keda.sh"]
+    resources: ["httpscaledobjects"]
+    verbs: ["get", "list", "watch"]
+  # Knative serving: read-only.
+  - apiGroups: ["serving.knative.dev"]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  # Core + workload objects the probes inspect: read-only.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  # Resource-usage probe: pod metrics from metrics-server.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-spero
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-spero
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-spero
+    namespace: {{ $speroNs }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-spero
+  namespace: {{ $speroNs }}
+  labels:
+    {{- include "elpio.labels" . | nindent 4 }}
+    app: elpio-spero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elpio-spero
+  template:
+    metadata:
+      labels:
+        app: elpio-spero
+    spec:
+      serviceAccountName: {{ .Release.Name }}-spero
+      containers:
+        - name: spero
+          image: {{ .Values.spero.image | quote }}
+          args: ["serve"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          {{- if .Values.spero.policyConfigMap }}
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/spero
+              readOnly: true
+          {{- end }}
+      {{- if .Values.spero.policyConfigMap }}
+      volumes:
+        - name: policy
+          configMap:
+            name: {{ .Values.spero.policyConfigMap }}
+      {{- end }}
+{{- end }}
