@@ -47,6 +47,56 @@ def test_knative_owner_reference_propagates():
     assert svc["metadata"]["ownerReferences"] == [owner]
 
 
+def test_knative_no_host_renders_no_domainmapping():
+    objs = KnativeEngine().render("api", "demo", SPEC)
+    assert [o["kind"] for o in objs] == ["Service"]
+
+
+def _host_spec(tls=False):
+    return ElpioServiceSpec.from_cr(
+        {"image": "x:1", "ingress": {"host": "api.example.com", "tls": tls}}
+    )
+
+
+def test_knative_host_renders_domainmapping_referencing_service():
+    objs = KnativeEngine().render("api", "demo", _host_spec())
+    by = {o["kind"]: o for o in objs}
+    assert set(by) == {"Service", "DomainMapping"}
+    dm = by["DomainMapping"]
+    assert dm["apiVersion"] == "serving.knative.dev/v1beta1"
+    assert dm["metadata"]["name"] == "api.example.com"
+    assert dm["metadata"]["namespace"] == "demo"
+    assert dm["spec"]["ref"] == {
+        "name": "api",
+        "kind": "Service",
+        "apiVersion": "serving.knative.dev/v1",
+    }
+    assert "tls" not in dm["spec"]
+
+
+def test_knative_host_with_tls_adds_tls_and_certificate():
+    objs = KnativeEngine().render("api", "demo", _host_spec(tls=True))
+    by = {o["kind"]: o for o in objs}
+    assert set(by) == {"Service", "DomainMapping", "Certificate"}
+
+    dm = by["DomainMapping"]
+    assert dm["spec"]["tls"] == {"secretName": "api-tls"}
+
+    cert = by["Certificate"]
+    assert cert["apiVersion"] == "cert-manager.io/v1"
+    assert cert["metadata"]["name"] == "api.example.com"
+    assert cert["spec"]["secretName"] == "api-tls"
+    assert cert["spec"]["dnsNames"] == ["api.example.com"]
+    assert cert["spec"]["issuerRef"]["name"] == "letsencrypt"
+    assert cert["spec"]["issuerRef"]["kind"] == "ClusterIssuer"
+
+
+def test_knative_host_owner_reference_propagates_to_all_objects():
+    owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioService", "name": "api", "uid": "abc"}
+    objs = KnativeEngine().render("api", "demo", _host_spec(tls=True), owner=owner)
+    assert all(o["metadata"]["ownerReferences"] == [owner] for o in objs)
+
+
 def _cr(metric, minscale=0):
     return ElpioServiceSpec.from_cr(
         {"image": "x:1", "port": 8080, "scaling": {"minScale": minscale, "maxScale": 5, "target": 50, "metric": metric}}

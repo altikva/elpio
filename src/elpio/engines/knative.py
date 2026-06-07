@@ -80,9 +80,54 @@ class KnativeEngine(ServingEngine):
                 }
             },
         }
+
+        objects: List[Dict[str, Any]] = [obj]
+
+        # A custom ingress host maps to a Knative DomainMapping pointing at this
+        # Service. When TLS is requested we also wire up a cert-manager
+        # Certificate and reference its secret from the DomainMapping.
+        if spec.ingress.host:
+            host = spec.ingress.host
+            tls_secret = f"{name}-tls"
+            mapping: Dict[str, Any] = {
+                "apiVersion": "serving.knative.dev/v1beta1",
+                "kind": "DomainMapping",
+                "metadata": {"name": host, "namespace": namespace, "labels": labels},
+                "spec": {
+                    "ref": {
+                        "name": name,
+                        "kind": "Service",
+                        "apiVersion": "serving.knative.dev/v1",
+                    }
+                },
+            }
+            if spec.ingress.tls:
+                mapping["spec"]["tls"] = {"secretName": tls_secret}
+                # TODO: the issuer should be configurable (per-tenant/global
+                # default) rather than hard-coded to a cluster "letsencrypt".
+                certificate: Dict[str, Any] = {
+                    "apiVersion": "cert-manager.io/v1",
+                    "kind": "Certificate",
+                    "metadata": {"name": host, "namespace": namespace, "labels": labels},
+                    "spec": {
+                        "secretName": tls_secret,
+                        "dnsNames": [host],
+                        "issuerRef": {
+                            "name": "letsencrypt",
+                            "kind": "ClusterIssuer",
+                            "group": "cert-manager.io",
+                        },
+                    },
+                }
+                objects.append(mapping)
+                objects.append(certificate)
+            else:
+                objects.append(mapping)
+
         if owner:
-            obj["metadata"]["ownerReferences"] = [owner]
-        return [obj]
+            for o in objects:
+                o["metadata"]["ownerReferences"] = [owner]
+        return objects
 
     def url_for(self, name: str, namespace: str) -> str:
         # The authoritative URL comes from the KnativeService status; this is a
