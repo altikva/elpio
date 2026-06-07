@@ -88,11 +88,15 @@ jobs:
     # The keda-http scale-down test idles for ~5-6 min before it settles back to
     # zero, so give the whole job plenty of headroom.
     timeout-minutes: 25
-    # Non-blocking for now: the suite covers both engines (Knative ksvc +
-    # keda-http HTTPScaledObject) but a single operator only runs one engine at a
-    # time, so we run the keda engine here and let the rest report without
-    # failing the build. Flip this off once the suite is split per engine.
-    continue-on-error: true
+    # A single operator only runs one engine at a time, and each engine's
+    # scale-to-zero path is exercised by its own test (Knative ksvc + activator
+    # vs keda-http HTTPScaledObject + interceptor). Run one cluster per engine and
+    # let each test skip when its engine isn't the one under test.
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [knative, keda]
+    name: e2e (${{ matrix.engine }})
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -118,9 +122,9 @@ jobs:
           # deployment.yaml (namespaced) would otherwise be applied first.
           kubectl apply -f deploy/operator/rbac.yaml
           kubectl apply -f deploy/operator
-      - name: Run the operator locally (keda engine) in the background
+      - name: Run the operator locally (${{ matrix.engine }} engine) in the background
         env:
-          ELPIO_ENGINE: keda
+          ELPIO_ENGINE: ${{ matrix.engine }}
         run: |
           nohup kopf run -m elpio.operator.handlers --standalone \
             >operator.log 2>&1 &
@@ -129,6 +133,7 @@ jobs:
       - name: Run e2e tests
         env:
           ELPIO_E2E: "1"
+          ELPIO_ENGINE: ${{ matrix.engine }}
         run: task e2e
       - name: Operator log (on failure)
         if: failure()

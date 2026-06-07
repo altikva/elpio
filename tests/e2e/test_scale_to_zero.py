@@ -18,13 +18,21 @@ or via ``task operator-run``). The flow this asserts end-to-end:
         -> after the idle window, it scales back to 0.
 """
 
+import os
 import subprocess
 import time
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.e2e
+# Knative-engine path: a request to the cluster-local Service is caught by the
+# Knative activator, which wakes the scaled-to-zero revision. Skip when the
+# operator under test is running a different engine.
+_ENGINE = os.getenv("ELPIO_ENGINE", "knative").lower()
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(_ENGINE != "knative", reason=f"knative-engine e2e (ELPIO_ENGINE={_ENGINE})"),
+]
 
 NS = "default"
 NAME = "hello"
