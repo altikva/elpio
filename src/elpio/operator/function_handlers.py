@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
 import kopf
 
 from elpio.function import (
@@ -28,6 +26,7 @@ from elpio.function import (
 )
 from elpio.k8s import apply_object, get_object
 from elpio.models.function import GROUP, PLURAL, VERSION, FunctionSpec
+from elpio.operator.common import owner_reference
 from elpio.status import condition, merge_conditions, now_rfc3339
 
 
@@ -42,24 +41,13 @@ def _build_conditions(status, ok: bool, reason: str, message: str):
     )
 
 
-def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "ElpioFunction",
-        "name": name,
-        "uid": uid,
-        "controller": True,
-        "blockOwnerDeletion": True,
-    }
-
-
 @kopf.on.create(GROUP, VERSION, PLURAL)
 @kopf.on.update(GROUP, VERSION, PLURAL)
 @kopf.on.resume(GROUP, VERSION, PLURAL)
 def reconcile_function(spec, meta, name, namespace, patch, logger, status, **_):
     """Kick off the build. The ElpioService is created later, once it succeeds."""
     parsed = FunctionSpec.from_cr(dict(spec))
-    owner = _owner_reference(name, meta["uid"])
+    owner = owner_reference("ElpioFunction", name, meta["uid"])
 
     apply_object(render_pipeline_run(name, namespace, parsed, owner=owner))
     logger.info("started build %s-build for function %s/%s", name, namespace, name)
@@ -84,7 +72,7 @@ def settle_function(spec, status, meta, name, namespace, patch, logger, **_):
 
     if action == "apply":
         parsed = FunctionSpec.from_cr(dict(spec))
-        owner = _owner_reference(name, meta["uid"])
+        owner = owner_reference("ElpioFunction", name, meta["uid"])
         apply_object(render_service(name, namespace, parsed, owner=owner))
         logger.info("build for %s/%s succeeded; published ElpioService", namespace, name)
         patch.status["serviceApplied"] = True

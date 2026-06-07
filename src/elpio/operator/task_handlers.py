@@ -14,25 +14,12 @@ own them, and server-side apply. Same declarative model as the other handlers.
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
 import kopf
 
-from elpio.k8s import apply_object
 from elpio.models.task import GROUP, PLURAL, VERSION, TaskSpec
+from elpio.operator.common import apply_all, owner_reference
 from elpio.status import condition, merge_conditions, now_rfc3339
 from elpio.task import render_task
-
-
-def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "ElpioTask",
-        "name": name,
-        "uid": uid,
-        "controller": True,
-        "blockOwnerDeletion": True,
-    }
 
 
 @kopf.on.create(GROUP, VERSION, PLURAL)
@@ -40,12 +27,10 @@ def _owner_reference(name: str, uid: str) -> Dict[str, Any]:
 @kopf.on.resume(GROUP, VERSION, PLURAL)
 def reconcile_task(spec, meta, name, namespace, patch, logger, status, **_):
     parsed = TaskSpec.from_cr(dict(spec))
-    owner = _owner_reference(name, meta["uid"])
+    owner = owner_reference("ElpioTask", name, meta["uid"])
 
     objects = render_task(name, namespace, parsed, owner=owner)
-    for obj in objects:
-        apply_object(obj)
-        logger.info("reconciled task child %s/%s", obj["kind"], obj["metadata"]["name"])
+    apply_all(objects, logger, "task child")
 
     patch.status["queue"] = parsed.queue
     patch.status["scheduled"] = bool(parsed.schedule)
