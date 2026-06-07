@@ -96,3 +96,34 @@ def test_null_provider_allows_everything():
     who = np.authenticate("anything")
     assert who.subject == "dev"
     assert np.authorize(who, "delete", "elpioservices") is True
+
+
+def test_jwks_uri_without_https_is_rejected():
+    with pytest.raises(ValueError):
+        OIDCIdentityProvider(
+            jwks_uri="http://idp.acme.io/jwks",
+            issuer="https://issuer.test",
+            audience="elpio",
+        )
+
+
+def test_jwks_uri_allows_http_localhost_for_dev():
+    OIDCIdentityProvider(
+        jwks_uri="http://localhost:8080/jwks",
+        issuer="https://issuer.test",
+        audience="elpio",
+    )
+
+
+def test_jwks_uri_requires_issuer_and_audience():
+    with pytest.raises(ValueError):
+        OIDCIdentityProvider(jwks_uri="https://idp.acme.io/jwks", audience="elpio")
+    with pytest.raises(ValueError):
+        OIDCIdentityProvider(jwks_uri="https://idp.acme.io/jwks", issuer="https://issuer.test")
+
+
+def test_signing_key_path_stays_lenient():
+    # symmetric path is for tests: issuer/audience remain optional
+    prov = OIDCIdentityProvider(signing_key=SECRET, algorithms=["HS256"])
+    p = prov.authenticate(_token({}))
+    assert p.subject == "alice"

@@ -55,6 +55,18 @@ class NullIdentityProvider(IdentityProvider):
 SarReviewer = Callable[[Principal, str, str], bool]
 
 
+def _jwks_uri_is_safe(jwks_uri: str) -> bool:
+    """https is required; plain http is tolerated only for local dev hosts."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(jwks_uri)
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme == "http":
+        return parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    return False
+
+
 class OIDCIdentityProvider(IdentityProvider):
     """Authenticate via OIDC JWTs; authorize via Kubernetes SubjectAccessReview.
 
@@ -78,6 +90,18 @@ class OIDCIdentityProvider(IdentityProvider):
     ) -> None:
         if not signing_key and not jwks_uri:
             raise ValueError("OIDCIdentityProvider needs signing_key or jwks_uri")
+        if jwks_uri and not _jwks_uri_is_safe(jwks_uri):
+            raise ValueError(
+                "jwks_uri must use https:// (http:// is only allowed for "
+                "localhost/127.0.0.1 in development)"
+            )
+        # Asymmetric (JWKS) is the production path: a bare token replay from
+        # another service must not authenticate, so pin issuer and audience.
+        if jwks_uri and (issuer is None or audience is None):
+            raise ValueError(
+                "jwks_uri requires both issuer and audience to be set so tokens "
+                "minted for another service are rejected"
+            )
         self._issuer = issuer
         self._audience = audience
         self._jwks_uri = jwks_uri
