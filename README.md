@@ -1,11 +1,6 @@
-```
- _____ _       _
-| ____| |_ __ (_) ___
-|  _| | | '_ \| |/ _ \
-| |___| | |_) | | (_) |
-|_____|_| .__/|_|\___/
-        |_|
-```
+<p align="center">
+  <img src="assets/img/elpio-cli.svg" alt="The elpio CLI landing screen: banner, command list, and examples" width="760">
+</p>
 
 **Turn any Kubernetes cluster into a private serverless platform.**
 
