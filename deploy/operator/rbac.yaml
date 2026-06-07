@@ -62,6 +62,10 @@ rules:
   - apiGroups: ["http.keda.sh"]
     resources: ["httpscaledobjects"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # External Secrets Operator: sync secret env from an external store
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Built-ins used by the KEDA path + GC
   - apiGroups: ["apps"]
     resources: ["deployments"]

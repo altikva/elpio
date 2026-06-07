@@ -46,9 +46,89 @@ class ImageRef(BaseModel):
         return f"{self.repository}:{self.tag}" if self.tag else self.repository
 
 
-class EnvVar(BaseModel):
+class KeySelector(BaseModel):
+    """Reference to a single key in a Secret or ConfigMap."""
+
     name: str
-    value: str
+    key: str
+    optional: Optional[bool] = None
+
+
+class EnvVarSource(BaseModel):
+    """Where a container env var draws its value from (one source only)."""
+
+    secretKeyRef: Optional[KeySelector] = None
+    configMapKeyRef: Optional[KeySelector] = None
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> "EnvVarSource":
+        sources = [self.secretKeyRef, self.configMapKeyRef]
+        if sum(s is not None for s in sources) != 1:
+            raise ValueError(
+                "valueFrom must set exactly one of secretKeyRef or configMapKeyRef"
+            )
+        return self
+
+
+class EnvVar(BaseModel):
+    """A container env var: a literal ``value`` or a ``valueFrom`` reference."""
+
+    name: str
+    value: Optional[str] = None
+    valueFrom: Optional[EnvVarSource] = None
+
+    @model_validator(mode="after")
+    def _value_xor_valuefrom(self) -> "EnvVar":
+        if (self.value is None) == (self.valueFrom is None):
+            raise ValueError("env entry must set exactly one of value or valueFrom")
+        return self
+
+
+class NamedRef(BaseModel):
+    name: str
+    optional: Optional[bool] = None
+
+
+class EnvFromSource(BaseModel):
+    """Bulk-inject every key of a Secret or ConfigMap as env vars."""
+
+    secretRef: Optional[NamedRef] = None
+    configMapRef: Optional[NamedRef] = None
+    prefix: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _exactly_one_ref(self) -> "EnvFromSource":
+        refs = [self.secretRef, self.configMapRef]
+        if sum(r is not None for r in refs) != 1:
+            raise ValueError(
+                "envFrom entry must set exactly one of secretRef or configMapRef"
+            )
+        return self
+
+
+class ExternalSecretData(BaseModel):
+    """One key mapped from an external secret store into the synced Secret."""
+
+    secretKey: str
+    remoteKey: str
+    remoteProperty: Optional[str] = None
+
+
+class ExternalSecret(BaseModel):
+    """Sync a Secret from an external store (External Secrets Operator).
+
+    Renders an ``external-secrets.io/v1beta1`` ExternalSecret that the operator
+    materializes into a Kubernetes Secret of name ``secretName`` (default: the
+    ExternalSecret name), which env entries can then reference via ``valueFrom``
+    / ``envFrom``.
+    """
+
+    name: str
+    storeRef: str
+    storeKind: Literal["SecretStore", "ClusterSecretStore"] = "SecretStore"
+    secretName: Optional[str] = None
+    refreshInterval: str = "1h"
+    data: List[ExternalSecretData] = Field(default_factory=list)
 
 
 class ResourceUnits(BaseModel):
@@ -122,6 +202,8 @@ class ElpioServiceSpec(BaseModel):
     image: ImageRef
     port: int = 8080
     env: List[EnvVar] = Field(default_factory=list)
+    envFrom: List[EnvFromSource] = Field(default_factory=list)
+    externalSecrets: List[ExternalSecret] = Field(default_factory=list)
     resources: Optional[Resources] = None
     readinessProbe: Optional[ReadinessProbe] = None
     scaling: Scaling = Field(default_factory=Scaling)

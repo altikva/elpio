@@ -200,3 +200,131 @@ def test_keda_http_owner_propagates():
     owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioService", "name": "api", "uid": "u"}
     objs = KedaEngine().render("api", "demo", SPEC, owner=owner)
     assert all(o["metadata"]["ownerReferences"] == [owner] for o in objs)
+
+
+# --- Secret/ConfigMap env + External Secrets (#42) ---
+
+
+def _knative_container(spec):
+    return KnativeEngine().render("api", "demo", spec)[0]["spec"]["template"]["spec"][
+        "containers"
+    ][0]
+
+
+def test_env_valuefrom_secret_and_configmap_render():
+    spec = ElpioServiceSpec.from_cr(
+        {
+            "image": "ghcr.io/acme/api:1",
+            "env": [
+                {"name": "PLAIN", "value": "x"},
+                {"name": "PW", "valueFrom": {"secretKeyRef": {"name": "db", "key": "password"}}},
+                {"name": "CFG", "valueFrom": {"configMapKeyRef": {"name": "cm", "key": "k"}}},
+            ],
+        }
+    )
+    env = _knative_container(spec)["env"]
+    assert env[0] == {"name": "PLAIN", "value": "x"}
+    assert env[1] == {"name": "PW", "valueFrom": {"secretKeyRef": {"name": "db", "key": "password"}}}
+    assert env[2] == {"name": "CFG", "valueFrom": {"configMapKeyRef": {"name": "cm", "key": "k"}}}
+
+
+def test_envfrom_secret_and_configmap_render():
+    spec = ElpioServiceSpec.from_cr(
+        {
+            "image": "ghcr.io/acme/api:1",
+            "envFrom": [
+                {"secretRef": {"name": "app-secrets"}},
+                {"configMapRef": {"name": "app-config"}, "prefix": "CFG_"},
+            ],
+        }
+    )
+    env_from = _knative_container(spec)["envFrom"]
+    assert env_from[0] == {"secretRef": {"name": "app-secrets"}}
+    assert env_from[1] == {"configMapRef": {"name": "app-config"}, "prefix": "CFG_"}
+
+
+def test_env_requires_exactly_one_of_value_or_valuefrom():
+    with pytest.raises(ValidationError):  # neither
+        ElpioServiceSpec.from_cr({"image": "x:1", "env": [{"name": "A"}]})
+    with pytest.raises(ValidationError):  # both
+        ElpioServiceSpec.from_cr(
+            {
+                "image": "x:1",
+                "env": [{"name": "A", "value": "v", "valueFrom": {"secretKeyRef": {"name": "s", "key": "k"}}}],
+            }
+        )
+
+
+def test_valuefrom_requires_exactly_one_source():
+    with pytest.raises(ValidationError):
+        ElpioServiceSpec.from_cr(
+            {
+                "image": "x:1",
+                "env": [
+                    {
+                        "name": "A",
+                        "valueFrom": {
+                            "secretKeyRef": {"name": "s", "key": "k"},
+                            "configMapKeyRef": {"name": "c", "key": "k"},
+                        },
+                    }
+                ],
+            }
+        )
+
+
+def test_external_secret_rendered_as_sibling_object():
+    spec = ElpioServiceSpec.from_cr(
+        {
+            "image": "ghcr.io/acme/api:1",
+            "externalSecrets": [
+                {
+                    "name": "db-creds",
+                    "storeRef": "vault",
+                    "storeKind": "ClusterSecretStore",
+                    "data": [{"secretKey": "password", "remoteKey": "prod/db", "remoteProperty": "pw"}],
+                }
+            ],
+        }
+    )
+    objs = KnativeEngine().render("api", "demo", spec)
+    es = [o for o in objs if o["kind"] == "ExternalSecret"]
+    assert len(es) == 1
+    es = es[0]
+    assert es["apiVersion"] == "external-secrets.io/v1beta1"
+    assert es["spec"]["secretStoreRef"] == {"name": "vault", "kind": "ClusterSecretStore"}
+    assert es["spec"]["target"]["name"] == "db-creds"  # defaults to ExternalSecret name
+    assert es["spec"]["data"][0] == {
+        "secretKey": "password",
+        "remoteRef": {"key": "prod/db", "property": "pw"},
+    }
+
+
+def test_external_secret_owner_reference_propagates():
+    owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioService", "name": "api", "uid": "u"}
+    spec = ElpioServiceSpec.from_cr(
+        {
+            "image": "ghcr.io/acme/api:1",
+            "externalSecrets": [{"name": "creds", "storeRef": "vault"}],
+        }
+    )
+    objs = KnativeEngine().render("api", "demo", spec, owner=owner)
+    assert all(o["metadata"]["ownerReferences"] == [owner] for o in objs)
+
+
+def test_keda_renders_secret_env_and_external_secret():
+    spec = ElpioServiceSpec.from_cr(
+        {
+            "image": "ghcr.io/acme/api:1",
+            "env": [{"name": "PW", "valueFrom": {"secretKeyRef": {"name": "db", "key": "p"}}}],
+            "envFrom": [{"secretRef": {"name": "app"}}],
+            "externalSecrets": [{"name": "creds", "storeRef": "vault"}],
+        }
+    )
+    objs = KedaEngine().render("api", "demo", spec)
+    container = next(o for o in objs if o["kind"] == "Deployment")["spec"]["template"]["spec"][
+        "containers"
+    ][0]
+    assert container["env"][0]["valueFrom"]["secretKeyRef"] == {"name": "db", "key": "p"}
+    assert container["envFrom"][0] == {"secretRef": {"name": "app"}}
+    assert any(o["kind"] == "ExternalSecret" for o in objs)
