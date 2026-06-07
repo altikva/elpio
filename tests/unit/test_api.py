@@ -119,3 +119,38 @@ def test_authorization_is_enforced():
     client = TestClient(create_app(identity=_DenyAll(), gateway=InMemoryCRGateway()))
     # authenticates (200-path) but authorize() denies → 403
     assert client.get("/clusters", headers=AUTH).status_code == 403
+
+
+class _RecordingIdentity(IdentityProvider):
+    """Authorizes everything, but records each (verb, resource) it's asked about."""
+
+    def __init__(self):
+        self.calls = []
+
+    def authenticate(self, token):
+        return Principal(subject="alice") if token else None
+
+    def authorize(self, principal, verb, resource):
+        self.calls.append((verb, resource))
+        return True
+
+
+def test_authz_resource_is_per_endpoint():
+    identity = _RecordingIdentity()
+    client = TestClient(create_app(identity=identity, gateway=InMemoryCRGateway()))
+
+    client.get("/clusters", headers=AUTH)
+    assert identity.calls[-1] == ("list", "clusters")
+
+    client.post("/clusters", json={"name": "edge-1"}, headers=AUTH)
+    assert identity.calls[-1] == ("create", "clusters")
+
+    client.get("/clusters/edge-1/services", headers=AUTH)
+    assert identity.calls[-1] == ("list", "elpioservices")
+
+    client.post(
+        "/clusters/edge-1/services",
+        json={"name": "api", "namespace": "demo", "spec": {"image": "ghcr.io/acme/api:1"}},
+        headers=AUTH,
+    )
+    assert identity.calls[-1] == ("create", "elpioservices")

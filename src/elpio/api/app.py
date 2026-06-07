@@ -105,9 +105,9 @@ def create_app(
             raise HTTPException(status_code=401, detail="invalid or missing token")
         return who
 
-    def require(verb: str):
+    def require(verb: str, resource: str):
         def _dep(who: Principal = Depends(principal)) -> Principal:
-            if not identity.authorize(who, verb, "elpioservices"):
+            if not identity.authorize(who, verb, resource):
                 raise HTTPException(status_code=403, detail="forbidden")
             return who
 
@@ -118,18 +118,18 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/clusters")
-    def list_clusters(_: Principal = Depends(require("list"))) -> List[Dict[str, Any]]:
+    def list_clusters(_: Principal = Depends(require("list", "clusters"))) -> List[Dict[str, Any]]:
         return [_redact(r) for r in registry.list()]
 
     @app.post("/clusters", status_code=201)
-    def add_cluster(body: ClusterCreate, _: Principal = Depends(require("create"))) -> Dict[str, Any]:
+    def add_cluster(body: ClusterCreate, _: Principal = Depends(require("create", "clusters"))) -> Dict[str, Any]:
         return _redact(registry.register(body.name, body.model_dump(exclude={"name"})))
 
     @app.get("/clusters/{cluster}/services")
     def list_services(
         cluster: str,
         namespace: Optional[str] = None,
-        _: Principal = Depends(require("list")),
+        _: Principal = Depends(require("list", "elpioservices")),
     ) -> List[Dict[str, Any]]:
         if registry.get(cluster) is None:
             raise HTTPException(status_code=404, detail="unknown cluster")
@@ -139,7 +139,7 @@ def create_app(
     def create_service(
         cluster: str,
         body: ServiceCreate,
-        _: Principal = Depends(require("create")),
+        _: Principal = Depends(require("create", "elpioservices")),
     ) -> Dict[str, Any]:
         if registry.get(cluster) is None:
             raise HTTPException(status_code=404, detail="unknown cluster")
