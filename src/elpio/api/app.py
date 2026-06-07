@@ -38,6 +38,12 @@ def _redact(record: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in record.items() if k not in _SENSITIVE}
 
 
+class SecretRef(BaseModel):
+    name: str
+    namespace: str = "default"
+    key: Optional[str] = None  # defaults to "token"/"ca" inside the Secret's data
+
+
 class ClusterCreate(BaseModel):
     name: str
     # Reach the cluster either by kubeconfig context, or directly by server+token.
@@ -45,6 +51,10 @@ class ClusterCreate(BaseModel):
     server: Optional[str] = None
     token: Optional[str] = None
     ca: Optional[str] = None
+    # Source the bearer token / CA from a Secret instead of inline plaintext. The
+    # ref itself carries no secret material, so it is safe to persist and return.
+    tokenSecretRef: Optional[SecretRef] = None
+    caSecretRef: Optional[SecretRef] = None
     insecure: bool = False  # skip TLS verification (dev only)
 
 

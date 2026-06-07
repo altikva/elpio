@@ -6,11 +6,12 @@
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Unit tests for the gateway.
 
+import base64
 import os
 
 import pytest
 
-from elpio.api.gateway import FleetRegistry, KubeCRGateway
+from elpio.api.gateway import FleetRegistry, KubeCRGateway, resolve_secrets
 from elpio.k8s import _ca_cert_path, connection_kind
 
 
@@ -102,6 +103,80 @@ def test_connection_kind_classification():
     assert connection_kind({"context": "x"}) == "context"
     assert connection_kind({"server": "https://a", "token": "t"}) == "token"
     assert connection_kind({"server": "https://a"}) == "context"  # token missing
+
+
+def _b64(value):
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def _fake_reader(secrets):
+    """A reader over an in-memory ``{(name, namespace, key): b64value}`` map."""
+    calls = []
+
+    def reader(name, namespace, key):
+        calls.append((name, namespace, key))
+        return secrets[(name, namespace, key)]
+
+    reader.calls = calls
+    return reader
+
+
+def test_token_secret_ref_resolves_to_inline_token():
+    reader = _fake_reader({("edge-creds", "elpio", "token"): _b64("s3cr3t")})
+    record = {
+        "name": "edge-1",
+        "server": "https://api:6443",
+        "tokenSecretRef": {"name": "edge-creds", "namespace": "elpio"},
+    }
+    eff = resolve_secrets(record, reader)
+    assert eff["token"] == "s3cr3t"
+    assert connection_kind(eff) == "token"
+    assert reader.calls == [("edge-creds", "elpio", "token")]
+
+
+def test_ca_secret_ref_uses_custom_key():
+    reader = _fake_reader(
+        {
+            ("creds", "elpio", "token"): _b64("tok"),
+            ("creds", "elpio", "ca.crt"): _b64("PEM-DATA"),
+        }
+    )
+    record = {
+        "server": "https://api:6443",
+        "tokenSecretRef": {"name": "creds", "namespace": "elpio"},
+        "caSecretRef": {"name": "creds", "namespace": "elpio", "key": "ca.crt"},
+    }
+    eff = resolve_secrets(record, reader)
+    assert eff["token"] == "tok" and eff["ca"] == "PEM-DATA"
+
+
+def test_inline_token_still_works_without_a_reader():
+    record = {"server": "https://api:6443", "token": "plain", "ca": "PEM"}
+    eff = resolve_secrets(record, reader=None)  # no ref → reader never invoked
+    assert eff == record and eff is not record  # copy, not the same object
+
+
+def test_resolver_does_not_mutate_or_persist_plaintext():
+    reader = _fake_reader({("c", "ns", "token"): _b64("opensesame")})
+    reg = FleetRegistry()
+    reg.register("edge-1", {"server": "https://api:6443", "tokenSecretRef": {"name": "c", "namespace": "ns"}})
+
+    seen = []
+    gw = KubeCRGateway(reg, client_factory=_factory_recording(seen), secret_reader=reader)
+    gw.list_services("edge-1")
+
+    # The client sees a resolved token...
+    assert seen[0]["token"] == "opensesame"
+    # ...but the persisted registry record still carries only the ref.
+    stored = reg.get("edge-1")
+    assert "token" not in stored
+    assert stored["tokenSecretRef"] == {"name": "c", "namespace": "ns"}
+
+
+def test_explicit_ref_overrides_a_stale_inline_token():
+    reader = _fake_reader({("c", "ns", "token"): _b64("fresh")})
+    record = {"server": "https://api:6443", "token": "stale", "tokenSecretRef": {"name": "c", "namespace": "ns"}}
+    assert resolve_secrets(record, reader)["token"] == "fresh"
 
 
 def test_ca_cert_path_is_deterministic_and_per_user():

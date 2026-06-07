@@ -16,12 +16,68 @@ unit tests, and ``KubeCRGateway`` is the real one.
 
 from __future__ import annotations
 
+import base64
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from elpio.providers.state import InMemoryStateStore, StateStore
 
 _CLUSTERS = "clusters"
+
+# A secret reader fetches one value out of a Kubernetes Secret, given the
+# Secret's name, its namespace, and the key inside its ``data`` map. It returns
+# the base64-encoded value exactly as the Kubernetes API stores it; the resolver
+# decodes it. Injecting this keeps ``resolve_secrets`` pure and unit-testable.
+SecretReader = Callable[[str, str, str], str]
+
+
+def _default_secret_reader(name: str, namespace: str, key: str) -> str:
+    """Read a Secret value from the cluster via ``elpio.k8s`` (base64-encoded).
+
+    Imported lazily so the resolver and its tests never need a cluster client.
+    """
+    from elpio.k8s import get_object
+
+    obj = get_object("v1", "Secret", name, namespace=namespace)
+    if obj is None:
+        raise KeyError(f"secret {namespace}/{name} not found")
+    data = obj.get("data") or {}
+    if key not in data:
+        raise KeyError(f"secret {namespace}/{name} has no key '{key}'")
+    return data[key]
+
+
+# (registry field, secret-ref field, default key inside the Secret's data map)
+_SECRET_REFS = (
+    ("token", "tokenSecretRef", "token"),
+    ("ca", "caSecretRef", "ca"),
+)
+
+
+def resolve_secrets(
+    record: Optional[Dict[str, Any]],
+    reader: Optional[SecretReader] = None,
+) -> Dict[str, Any]:
+    """Return an effective cluster record with secret refs resolved inline.
+
+    A registry record may carry sensitive material indirectly through
+    ``tokenSecretRef`` / ``caSecretRef`` (each ``{name, namespace, key?}``)
+    instead of an inline ``token`` / ``ca``. For every such ref, this reads the
+    referenced Secret value via ``reader``, base64-decodes it, and fills in the
+    matching plaintext field on a COPY of the record. The input record is never
+    mutated, so the plaintext is never persisted back into the registry. An
+    inline ``token`` / ``ca`` still works untouched (back-compat); when both are
+    present the explicit secret ref wins.
+    """
+    record = dict(record or {})
+    reader = reader or _default_secret_reader
+    for target, ref_field, default_key in _SECRET_REFS:
+        ref = record.get(ref_field)
+        if not ref:
+            continue
+        value = reader(ref["name"], ref.get("namespace") or "", ref.get("key") or default_key)
+        record[target] = base64.b64decode(value).decode("utf-8")
+    return record
 
 
 class FleetRegistry:
@@ -81,22 +137,28 @@ class KubeCRGateway(CRGateway):
     """Real gateway: server-side applies CRs via the Kubernetes API.
 
     Each registered cluster carries connection info — a kubeconfig ``context`` or
-    a direct ``server`` + ``token`` (+ optional ``ca``). The gateway resolves a
-    client from that record so it authors CRs against the right cluster.
-    ``client_factory`` maps a cluster record to a DynamicClient and is injectable
-    for tests.
+    a direct ``server`` + ``token`` (+ optional ``ca``). The sensitive ``token``
+    and ``ca`` may instead be sourced from a Kubernetes Secret via
+    ``tokenSecretRef`` / ``caSecretRef``; those are resolved to plaintext only at
+    connection time, on a throwaway copy of the record, so the registry never
+    stores the secret material. The gateway resolves a client from that effective
+    record so it authors CRs against the right cluster. ``client_factory`` maps a
+    record to a DynamicClient and ``secret_reader`` reads Secret values; both are
+    injectable for tests.
     """
 
-    def __init__(self, registry: FleetRegistry, client_factory=None) -> None:
+    def __init__(self, registry: FleetRegistry, client_factory=None, secret_reader=None) -> None:
         self._registry = registry
         if client_factory is None:
             from elpio.k8s import client_for_record
 
             client_factory = client_for_record
         self._client_factory = client_factory
+        self._secret_reader = secret_reader
 
     def _client(self, cluster: str):
         record = self._registry.get(cluster) or {}
+        record = resolve_secrets(record, self._secret_reader)
         return self._client_factory(record)
 
     def list_services(self, cluster: str, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
