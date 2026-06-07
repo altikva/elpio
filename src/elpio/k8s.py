@@ -17,7 +17,10 @@ is idempotent and field-ownership is tracked under the ``elpio`` field manager.
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
+import os
+import tempfile
 from typing import Any, Dict, Optional
 
 from kubernetes import config, dynamic
@@ -58,12 +61,21 @@ def connection_kind(record: Optional[Dict[str, Any]]) -> str:
     return "context"
 
 
+def _ca_cert_path(ca_cert: str) -> str:
+    """Deterministic temp path for a CA bundle.
+
+    The same ``ca_cert`` always maps to the same file, so reconnecting to a
+    cluster reuses one file instead of accumulating a new ``NamedTemporaryFile``
+    on every call. Pure (no I/O) so it's unit-testable.
+    """
+    digest = hashlib.sha256(ca_cert.encode()).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), f"elpio-ca-{digest}.crt")
+
+
 @functools.lru_cache(maxsize=None)
 def _client_from_token(
     server: str, token: str, ca_cert: Optional[str] = None, insecure: bool = False
 ) -> "dynamic.DynamicClient":
-    import tempfile
-
     from kubernetes import client as kclient
 
     cfg = kclient.Configuration()
@@ -71,10 +83,11 @@ def _client_from_token(
     cfg.api_key = {"authorization": token}
     cfg.api_key_prefix = {"authorization": "Bearer"}
     if ca_cert:
-        handle = tempfile.NamedTemporaryFile("w", suffix=".crt", delete=False)
-        handle.write(ca_cert)
-        handle.close()
-        cfg.ssl_ca_cert = handle.name
+        ca_path = _ca_cert_path(ca_cert)
+        if not os.path.exists(ca_path):
+            with open(ca_path, "w") as handle:
+                handle.write(ca_cert)
+        cfg.ssl_ca_cert = ca_path
     elif insecure:
         # Explicit opt-in only (local/dev). Never the silent default.
         logger.warning("TLS verification disabled for %s (insecure=true)", server)

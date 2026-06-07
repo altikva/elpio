@@ -6,8 +6,11 @@
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Unit tests for the gateway.
 
+import os
+import tempfile
+
 from elpio.api.gateway import FleetRegistry, KubeCRGateway
-from elpio.k8s import connection_kind
+from elpio.k8s import _ca_cert_path, connection_kind
 
 
 class FakeApi:
@@ -98,3 +101,15 @@ def test_connection_kind_classification():
     assert connection_kind({"context": "x"}) == "context"
     assert connection_kind({"server": "https://a", "token": "t"}) == "token"
     assert connection_kind({"server": "https://a"}) == "context"  # token missing
+
+
+def test_ca_cert_path_is_deterministic_per_ca():
+    ca = "-----BEGIN CERTIFICATE-----\nPEMDATA\n-----END CERTIFICATE-----\n"
+    # Same CA → same path every call (so we reuse one file, not leak temps).
+    assert _ca_cert_path(ca) == _ca_cert_path(ca)
+    # Different CA → different path.
+    assert _ca_cert_path(ca) != _ca_cert_path(ca + "x")
+    path = _ca_cert_path(ca)
+    assert path.endswith(".crt")
+    assert os.path.basename(path).startswith("elpio-ca-")
+    assert os.path.dirname(path) == tempfile.gettempdir()
