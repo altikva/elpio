@@ -53,3 +53,67 @@ def test_apply_all_applies_each_object(monkeypatch):
 def test_apply_all_empty(monkeypatch):
     monkeypatch.setattr(common, "apply_object", lambda obj: None)
     assert common.apply_all([], logging.getLogger("test"), "child") == 0
+
+
+def _with_conditions(conditions):
+    return {"status": {"conditions": conditions}}
+
+
+def test_child_ready_none_is_false():
+    assert common.child_ready(None) is False
+
+
+def test_child_ready_empty_dict_is_false():
+    assert common.child_ready({}) is False
+
+
+def test_child_ready_missing_status_is_false():
+    assert common.child_ready({"metadata": {"name": "hello"}}) is False
+
+
+def test_child_ready_no_conditions_is_false():
+    assert common.child_ready({"status": {}}) is False
+    assert common.child_ready({"status": {"conditions": []}}) is False
+    assert common.child_ready({"status": {"conditions": None}}) is False
+
+
+def test_child_ready_knative_true():
+    # Knative Service exposes a Ready condition alongside sub-conditions.
+    child = _with_conditions(
+        [
+            {"type": "ConfigurationsReady", "status": "True"},
+            {"type": "RoutesReady", "status": "True"},
+            {"type": "Ready", "status": "True"},
+        ]
+    )
+    assert common.child_ready(child) is True
+
+
+def test_child_ready_false_status():
+    child = _with_conditions([{"type": "Ready", "status": "False", "reason": "Deploying"}])
+    assert common.child_ready(child) is False
+
+
+def test_child_ready_unknown_status():
+    child = _with_conditions([{"type": "Ready", "status": "Unknown"}])
+    assert common.child_ready(child) is False
+
+
+def test_child_ready_keda_scaledobject_true():
+    child = _with_conditions(
+        [
+            {"type": "Active", "status": "False"},
+            {"type": "Ready", "status": "True"},
+        ]
+    )
+    assert common.child_ready(child) is True
+
+
+def test_child_ready_ignores_non_dict_conditions():
+    child = _with_conditions(["nonsense", {"type": "Ready", "status": "True"}])
+    assert common.child_ready(child) is True
+
+
+def test_child_ready_no_ready_condition_is_false():
+    child = _with_conditions([{"type": "Active", "status": "True"}])
+    assert common.child_ready(child) is False
