@@ -74,6 +74,59 @@ def test_uid_is_echoed():
     assert resp["response"]["uid"] == "abc-123"
 
 
+def test_ban_latest_rejects_explicit_latest_tag():
+    resp = review(_ar(_svc({"image": "ghcr.io/acme/api:latest"})), ban_latest=True)
+    assert resp["response"]["allowed"] is False
+    assert "mutable image tag" in resp["response"]["status"]["message"]
+
+
+def test_ban_latest_rejects_bare_repo():
+    resp = review(_ar(_svc({"image": "ghcr.io/acme/api"})), ban_latest=True)
+    assert resp["response"]["allowed"] is False
+    assert "mutable image tag" in resp["response"]["status"]["message"]
+
+
+def test_ban_latest_rejects_dict_without_tag():
+    resp = review(_ar(_svc({"image": {"repository": "ghcr.io/acme/api"}})), ban_latest=True)
+    assert resp["response"]["allowed"] is False
+
+
+def test_ban_latest_allows_pinned_tag():
+    resp = review(_ar(_svc({"image": "ghcr.io/acme/api:1.2"})), ban_latest=True)
+    assert resp["response"]["allowed"] is True
+
+
+def test_ban_latest_off_by_default_allows_latest():
+    resp = review(_ar(_svc({"image": "ghcr.io/acme/api:latest"})))
+    assert resp["response"]["allowed"] is True
+
+
+def test_require_requests_rejects_spec_without_requests():
+    resp = review(_ar(_svc({"image": "ghcr.io/acme/api:1"})), require_requests=True)
+    assert resp["response"]["allowed"] is False
+    assert "requests" in resp["response"]["status"]["message"]
+
+
+def test_require_requests_rejects_partial_requests():
+    spec = {"image": "ghcr.io/acme/api:1", "resources": {"requests": {"cpu": "100m"}}}
+    resp = review(_ar(_svc(spec)), require_requests=True)
+    assert resp["response"]["allowed"] is False
+
+
+def test_require_requests_allows_spec_with_requests():
+    spec = {
+        "image": "ghcr.io/acme/api:1",
+        "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
+    }
+    resp = review(_ar(_svc(spec)), require_requests=True)
+    assert resp["response"]["allowed"] is True
+
+
+def test_require_requests_off_by_default_allows_missing():
+    resp = review(_ar(_svc({"image": "ghcr.io/acme/api:1"})))
+    assert resp["response"]["allowed"] is True
+
+
 def test_server_mutate_and_health():
     client = TestClient(app)
     assert client.get("/healthz").json() == {"status": "ok"}
