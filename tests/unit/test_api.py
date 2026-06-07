@@ -89,6 +89,24 @@ def test_cluster_credentials_are_redacted_in_responses(client):
     assert "SECRET" not in _json.dumps(listed)
 
 
+def test_secret_ref_survives_in_responses_but_carries_no_plaintext(client):
+    # A token sourced from a Secret: the ref is not sensitive, so it round-trips,
+    # while the resolved bearer token is never produced by these endpoints.
+    body = {
+        "name": "saas-2",
+        "server": "https://api.saas:6443",
+        "tokenSecretRef": {"name": "edge-creds", "namespace": "elpio"},
+    }
+    created = client.post("/clusters", json=body, headers=AUTH).json()
+    assert created["tokenSecretRef"] == {"name": "edge-creds", "namespace": "elpio", "key": None}
+    assert "token" not in created and "ca" not in created
+
+    listed = client.get("/clusters", headers=AUTH).json()
+    saas2 = next(c for c in listed if c["name"] == "saas-2")
+    assert saas2["tokenSecretRef"]["name"] == "edge-creds"
+    assert "token" not in saas2 and "ca" not in saas2
+
+
 def test_api_fails_closed_without_oidc(monkeypatch):
     from elpio.api.app import create_app as _create_app
 
