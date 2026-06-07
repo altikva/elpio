@@ -17,7 +17,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from elpio.engines.base import ServingEngine, container_resources
+from elpio.engines.base import (
+    ServingEngine,
+    container_env,
+    container_env_from,
+    container_resources,
+    external_secret,
+)
 from elpio.models.service import ElpioServiceSpec, TrafficTarget
 
 _LABEL_MANAGED = {"app.kubernetes.io/managed-by": "elpio"}
@@ -59,7 +65,9 @@ class KnativeEngine(ServingEngine):
             "ports": [{"containerPort": spec.port}],
         }
         if spec.env:
-            container["env"] = [{"name": e.name, "value": e.value} for e in spec.env]
+            container["env"] = [container_env(e) for e in spec.env]
+        if spec.envFrom:
+            container["envFrom"] = [container_env_from(f) for f in spec.envFrom]
         container.update(container_resources(spec))
         if spec.readinessProbe:
             probe: Dict[str, Any] = {
@@ -103,6 +111,12 @@ class KnativeEngine(ServingEngine):
         }
 
         objects: List[Dict[str, Any]] = [obj]
+
+        # External Secrets: sync each referenced external store into a k8s Secret
+        # that env / envFrom can then consume. Rendered as sibling objects so they
+        # are owned (and GC'd) alongside the Service.
+        for es in spec.externalSecrets:
+            objects.append(external_secret(es, namespace, labels))
 
         # A custom ingress host maps to a Knative DomainMapping pointing at this
         # Service. When TLS is requested we also wire up a cert-manager
