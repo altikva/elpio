@@ -18,9 +18,21 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from elpio.engines.base import ServingEngine, container_resources
-from elpio.models.service import ElpioServiceSpec
+from elpio.models.service import ElpioServiceSpec, TrafficTarget
 
 _LABEL_MANAGED = {"app.kubernetes.io/managed-by": "elpio"}
+
+
+def _traffic_target(t: TrafficTarget) -> Dict[str, Any]:
+    """Render one ElpioService traffic entry as a Knative traffic target."""
+    out: Dict[str, Any] = {"percent": t.percent}
+    if t.revisionName is not None:
+        out["revisionName"] = t.revisionName
+    else:
+        out["latestRevision"] = bool(t.latestRevision)
+    if t.tag is not None:
+        out["tag"] = t.tag
+    return out
 
 
 class KnativeEngine(ServingEngine):
@@ -69,16 +81,25 @@ class KnativeEngine(ServingEngine):
         if spec.scaling.metric == "concurrency":
             template_spec["containerConcurrency"] = spec.scaling.target
 
+        service_spec: Dict[str, Any] = {
+            "template": {
+                "metadata": {"annotations": annotations},
+                "spec": template_spec,
+            }
+        }
+
+        # When the spec pins traffic across revisions, emit it as the Knative
+        # Service's spec.traffic. Left unset, Knative implicitly routes 100% to
+        # the latest revision (today's behavior). The KEDA engine ignores
+        # traffic entirely: it has no revision model to split across.
+        if spec.traffic:
+            service_spec["traffic"] = [_traffic_target(t) for t in spec.traffic]
+
         obj: Dict[str, Any] = {
             "apiVersion": "serving.knative.dev/v1",
             "kind": "Service",
             "metadata": {"name": name, "namespace": namespace, "labels": labels},
-            "spec": {
-                "template": {
-                    "metadata": {"annotations": annotations},
-                    "spec": template_spec,
-                }
-            },
+            "spec": service_spec,
         }
 
         objects: List[Dict[str, Any]] = [obj]
