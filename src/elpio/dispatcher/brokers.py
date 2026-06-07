@@ -16,11 +16,92 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from dataclasses import dataclass
 from typing import Any, Iterable, List, Optional
 
 from elpio.dispatcher.core import Broker, Message
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TLSConfig:
+    """TLS wiring for a broker connection.
+
+    ``ca_cert`` is a path to a PEM bundle (mounted from a Secret). When
+    ``insecure_skip_verify`` is set the broker skips certificate verification,
+    which is for local/dev clusters only.
+    """
+
+    enabled: bool = False
+    ca_cert: Optional[str] = None
+    insecure_skip_verify: bool = False
+
+
+@dataclass
+class Credentials:
+    """Resolved broker credentials.
+
+    These are already dereferenced from the environment, so they hold the actual
+    secret values (or ``None``). Build them with :func:`resolve_credentials` so
+    nothing sensitive has to live inline in the CR.
+    """
+
+    username: Optional[str] = None
+    password: Optional[str] = None
+    token: Optional[str] = None
+
+
+def _env(name: Optional[str]) -> Optional[str]:
+    return os.getenv(name) if name else None
+
+
+def resolve_credentials(
+    *,
+    username: Optional[str] = None,
+    username_env: Optional[str] = None,
+    password_env: Optional[str] = None,
+    token: Optional[str] = None,
+    token_env: Optional[str] = None,
+) -> Credentials:
+    """Resolve credentials, preferring env vars over inline literals.
+
+    Precedence per value: the ``*_env`` var name (read here) wins over the inline
+    literal. Passwords are env-only by design, so there is no inline password
+    argument. The env vars themselves are populated in the dispatcher pod from a
+    Secret, so no secret value lives in the spec.
+    """
+    return Credentials(
+        username=_env(username_env) or username,
+        password=_env(password_env),
+        token=_env(token_env) or token,
+    )
+
+
+def credentials_from_env() -> Credentials:
+    """Resolve credentials from the dispatcher's own ELPIO_BROKER_* env.
+
+    The ELPIO_BROKER_*_ENV vars name *other* env vars (the ones a Secret feeds),
+    so a password never appears in the spec or in a fixed-name var.
+    """
+    return resolve_credentials(
+        username=os.getenv("ELPIO_BROKER_USERNAME"),
+        username_env=os.getenv("ELPIO_BROKER_USERNAME_ENV"),
+        password_env=os.getenv("ELPIO_BROKER_PASSWORD_ENV"),
+        token=os.getenv("ELPIO_BROKER_TOKEN"),
+        token_env=os.getenv("ELPIO_BROKER_TOKEN_ENV"),
+    )
+
+
+def tls_from_env() -> TLSConfig:
+    """Read TLS settings from the dispatcher's ELPIO_BROKER_TLS_* env."""
+    return TLSConfig(
+        enabled=os.getenv("ELPIO_BROKER_TLS", "").lower() in ("1", "true", "yes"),
+        ca_cert=os.getenv("ELPIO_BROKER_TLS_CA") or None,
+        insecure_skip_verify=os.getenv("ELPIO_BROKER_TLS_INSECURE", "").lower()
+        in ("1", "true", "yes"),
+    )
 
 
 class MemoryBroker(Broker):
@@ -52,11 +133,32 @@ class RedisBroker(Broker):
     (``dlq``, defaulting to ``"<queue>:dead"``) instead of being dropped.
     """
 
-    def __init__(self, address: str, queue: str, dlq: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        address: str,
+        queue: str,
+        dlq: Optional[str] = None,
+        *,
+        creds: Optional[Credentials] = None,
+        tls: Optional[TLSConfig] = None,
+    ) -> None:
         import redis
 
+        creds = creds or Credentials()
+        tls = tls or TLSConfig()
         host, _, port = address.partition(":")
-        self._client = redis.Redis(host=host, port=int(port or 6379))
+        kwargs: dict = {"host": host, "port": int(port or 6379)}
+        if creds.username:
+            kwargs["username"] = creds.username
+        if creds.password:
+            kwargs["password"] = creds.password
+        if tls.enabled:
+            kwargs["ssl"] = True
+            if tls.ca_cert:
+                kwargs["ssl_ca_certs"] = tls.ca_cert
+            if tls.insecure_skip_verify:
+                kwargs["ssl_cert_reqs"] = None
+        self._client = redis.Redis(**kwargs)
         self._queue = queue
         self._dlq = dlq or f"{queue}:dead"
         self._seq = 0
@@ -83,13 +185,34 @@ class RedisBroker(Broker):
 class RabbitMQBroker(Broker):
     """A durable RabbitMQ queue consumed one message at a time (basic_get)."""
 
-    def __init__(self, address: str, queue: str, dlq: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        address: str,
+        queue: str,
+        dlq: Optional[str] = None,
+        *,
+        creds: Optional[Credentials] = None,
+        tls: Optional[TLSConfig] = None,
+    ) -> None:
         import pika
 
+        creds = creds or Credentials()
+        tls = tls or TLSConfig()
         host, _, port = address.partition(":")
-        self._conn = pika.BlockingConnection(
-            pika.ConnectionParameters(host=host, port=int(port or 5672))
-        )
+        params: dict = {"host": host, "port": int(port or 5672)}
+        if creds.username or creds.password:
+            params["credentials"] = pika.PlainCredentials(
+                creds.username or "guest", creds.password or ""
+            )
+        if tls.enabled:
+            import ssl
+
+            ctx = ssl.create_default_context(cafile=tls.ca_cert)
+            if tls.insecure_skip_verify:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            params["ssl_options"] = pika.SSLOptions(ctx, server_hostname=host)
+        self._conn = pika.BlockingConnection(pika.ConnectionParameters(**params))
         self._ch = self._conn.channel()
         self._queue = queue
         self._dlq = dlq or f"{queue}.dead"
@@ -136,23 +259,55 @@ class NatsBroker(Broker):
     connection mid-ack, say) logs and is swallowed instead of crashing the loop.
     """
 
-    def __init__(self, address: str, queue: str, dlq: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        address: str,
+        queue: str,
+        dlq: Optional[str] = None,
+        *,
+        creds: Optional[Credentials] = None,
+        tls: Optional[TLSConfig] = None,
+    ) -> None:
         import asyncio
 
         import nats
 
-        url = address if "://" in address else f"nats://{address}"
+        creds = creds or Credentials()
+        tls = tls or TLSConfig()
+        scheme = "tls" if tls.enabled and "://" not in address else "nats"
+        url = address if "://" in address else f"{scheme}://{address}"
+        connect_kwargs: dict = {"servers": [url]}
+        if creds.token:
+            connect_kwargs["token"] = creds.token
+        if creds.username:
+            connect_kwargs["user"] = creds.username
+        if creds.password:
+            connect_kwargs["password"] = creds.password
+        if tls.enabled:
+            import ssl
+
+            ctx = ssl.create_default_context(cafile=tls.ca_cert)
+            if tls.insecure_skip_verify:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            connect_kwargs["tls"] = ctx
         self._loop = asyncio.new_event_loop()
         self._closed = False
-        self._nc = self._loop.run_until_complete(nats.connect(servers=[url]))
+        self._nc = self._loop.run_until_complete(nats.connect(**connect_kwargs))
         self._js = self._nc.jetstream()
         self._subject = queue
         self._dlq = dlq or f"{queue}.dead"
-        self._sub = self._loop.run_until_complete(
-            self._js.pull_subscribe(self._subject, durable=f"{queue}-workers")
+        self._sub = self._run_init_subscribe(
+            self._js, self._subject, f"{queue}-workers"
         )
         self._inflight: dict = {}
         self._seq = 0
+
+    def _run_init_subscribe(self, js: Any, subject: str, durable: str) -> Any:
+        """Open the JetStream pull subscription. Split out so tests can stub it."""
+        return self._loop.run_until_complete(
+            js.pull_subscribe(subject, durable=durable)
+        )
 
     def _run(self, coro: Any, *, what: str) -> Any:
         """Drive a coroutine to completion, swallowing transient errors.
@@ -232,11 +387,19 @@ BROKERS = {
 }
 
 
-def make_broker(broker_type: str, address: str, queue: str, dlq: Optional[str] = None) -> Broker:
+def make_broker(
+    broker_type: str,
+    address: str,
+    queue: str,
+    dlq: Optional[str] = None,
+    *,
+    creds: Optional[Credentials] = None,
+    tls: Optional[TLSConfig] = None,
+) -> Broker:
     try:
         cls = BROKERS[broker_type]
     except KeyError:
         raise SystemExit(
             f"dispatcher: unknown broker {broker_type!r} (expected {sorted(BROKERS)})"
         )
-    return cls(address, queue, dlq=dlq)
+    return cls(address, queue, dlq=dlq, creds=creds, tls=tls)
