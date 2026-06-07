@@ -22,13 +22,20 @@ The flow this asserts:
         -> after the scaledown window, it settles back to 0.
 """
 
+import os
 import subprocess
 import time
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.e2e
+# KEDA-engine path: the wake request must traverse the keda-http-add-on
+# interceptor. Skip unless the operator under test is running the keda engine.
+_ENGINE = os.getenv("ELPIO_ENGINE", "knative").lower()
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(_ENGINE != "keda", reason=f"keda-engine e2e (ELPIO_ENGINE={_ENGINE})"),
+]
 
 NS = "default"
 NAME = "hello-keda"
