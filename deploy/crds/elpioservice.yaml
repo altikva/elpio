@@ -96,6 +96,7 @@ spec:
                       enum: [external, cluster-local]
                       default: external
                     host: { type: string }
+                    tls: { type: boolean, default: false }
                 serviceAccount: { type: string }
             status:
               type: object
