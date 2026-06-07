@@ -16,6 +16,7 @@ it writes CRs the in-cluster operators reconcile.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +26,16 @@ from pydantic import BaseModel, ValidationError
 from elpio.api.gateway import CRGateway, FleetRegistry, InMemoryCRGateway, KubeCRGateway
 from elpio.models.service import ElpioServiceSpec
 from elpio.providers.identity import IdentityProvider, NullIdentityProvider, Principal
+
+logger = logging.getLogger("elpio.api")
+
+# Credential fields that must never appear in a response.
+_SENSITIVE = ("token", "ca")
+
+
+def _redact(record: Dict[str, Any]) -> Dict[str, Any]:
+    """A cluster record safe to return: drop the bearer token and CA."""
+    return {k: v for k, v in record.items() if k not in _SENSITIVE}
 
 
 class ClusterCreate(BaseModel):
@@ -44,6 +55,12 @@ class ServiceCreate(BaseModel):
 
 
 def _default_identity() -> IdentityProvider:
+    """Resolve the identity provider, failing closed by default.
+
+    OIDC when ``ELPIO_OIDC_JWKS_URI`` is set. Otherwise the API refuses to start
+    unless ``ELPIO_DEV_INSECURE=1`` is set, which selects the allow-everything
+    NullIdentityProvider for local development only (with a loud warning).
+    """
     jwks = os.getenv("ELPIO_OIDC_JWKS_URI")
     if jwks:
         from elpio.providers.identity import OIDCIdentityProvider
@@ -53,7 +70,16 @@ def _default_identity() -> IdentityProvider:
             issuer=os.getenv("ELPIO_OIDC_ISSUER"),
             audience=os.getenv("ELPIO_OIDC_AUDIENCE"),
         )
-    return NullIdentityProvider()
+    if os.getenv("ELPIO_DEV_INSECURE") in ("1", "true", "True"):
+        logger.warning(
+            "ELPIO_DEV_INSECURE set: the management API authenticates everyone as "
+            "'dev' and authorizes everything. NEVER use this outside local dev."
+        )
+        return NullIdentityProvider()
+    raise RuntimeError(
+        "management API needs OIDC: set ELPIO_OIDC_JWKS_URI (and issuer/audience), "
+        "or ELPIO_DEV_INSECURE=1 for local development only"
+    )
 
 
 def create_app(
@@ -93,11 +119,11 @@ def create_app(
 
     @app.get("/clusters")
     def list_clusters(_: Principal = Depends(require("list"))) -> List[Dict[str, Any]]:
-        return registry.list()
+        return [_redact(r) for r in registry.list()]
 
     @app.post("/clusters", status_code=201)
     def add_cluster(body: ClusterCreate, _: Principal = Depends(require("create"))) -> Dict[str, Any]:
-        return registry.register(body.name, body.model_dump(exclude={"name"}))
+        return _redact(registry.register(body.name, body.model_dump(exclude={"name"})))
 
     @app.get("/clusters/{cluster}/services")
     def list_services(
@@ -127,5 +153,6 @@ def create_app(
     return app
 
 
-# Module-level app for ``uvicorn elpio.api.app:app``.
-app = create_app()
+# Run with the factory so no app (and no identity provider) is built at import
+# time — `uvicorn elpio.api.app:create_app --factory`. This is what makes the
+# fail-closed default in _default_identity actually gate startup.
