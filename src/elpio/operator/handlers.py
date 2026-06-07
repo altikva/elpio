@@ -23,6 +23,7 @@ it converges.
 
 from __future__ import annotations
 
+import time
 from typing import Tuple
 
 import kopf
@@ -30,6 +31,7 @@ import kopf
 from elpio.engines.base import ServingEngine, get_engine
 from elpio.k8s import get_object
 from elpio.models.service import GROUP, PLURAL, VERSION, ElpioServiceSpec
+from elpio.operator import metrics
 from elpio.operator.common import apply_all, child_ready, owner_reference
 from elpio.status import condition, merge_conditions, now_rfc3339
 
@@ -62,31 +64,52 @@ def _readiness_conditions(status, ready: bool, engine_name: str):
     )
 
 
+@kopf.on.startup()
+def start_observability(logger, **_):
+    """Start the Prometheus metrics exporter when ``ELPIO_METRICS`` is set."""
+    if metrics.start_metrics_server():
+        logger.info("elpio metrics exporter started")
+
+
 @kopf.on.create(GROUP, VERSION, PLURAL)
 @kopf.on.update(GROUP, VERSION, PLURAL)
 @kopf.on.resume(GROUP, VERSION, PLURAL)
-def reconcile(spec, meta, name, namespace, patch, logger, status, **_):
-    parsed = ElpioServiceSpec.from_cr(dict(spec))
-    engine = get_engine()
-    owner = owner_reference("ElpioService", name, meta["uid"])
+def reconcile(spec, meta, name, namespace, patch, logger, status, body, **_):
+    started = time.monotonic()
+    try:
+        parsed = ElpioServiceSpec.from_cr(dict(spec))
+        engine = get_engine()
+        owner = owner_reference("ElpioService", name, meta["uid"])
 
-    objects = engine.render(name, namespace, parsed, owner=owner)
-    apply_all(objects, logger, f"{engine.name} engine")
+        objects = engine.render(name, namespace, parsed, owner=owner)
+        apply_all(objects, logger, f"{engine.name} engine")
 
-    api_version, kind = _primary_child_ref(engine, parsed)
-    child = get_object(api_version, kind, name, namespace)
-    ready = child_ready(child)
+        api_version, kind = _primary_child_ref(engine, parsed)
+        child = get_object(api_version, kind, name, namespace)
+        ready = child_ready(child)
 
-    patch.status["engine"] = engine.name
-    patch.status["url"] = engine.url_for(name, namespace)
-    patch.status["observedGeneration"] = meta.get("generation")
-    patch.status["ready"] = ready
-    patch.status["conditions"] = _readiness_conditions(status, ready, engine.name)
+        patch.status["engine"] = engine.name
+        patch.status["url"] = engine.url_for(name, namespace)
+        patch.status["observedGeneration"] = meta.get("generation")
+        patch.status["ready"] = ready
+        patch.status["conditions"] = _readiness_conditions(status, ready, engine.name)
+    except Exception as exc:
+        metrics.record_reconcile("ElpioService", "error", time.monotonic() - started)
+        kopf.warn(body, reason="ReconcileFailed", message=f"reconcile failed: {exc}")
+        raise
+
+    metrics.record_reconcile("ElpioService", "success", time.monotonic() - started)
+    kopf.event(
+        body,
+        type="Normal",
+        reason="Reconciled",
+        message=f"served by the {engine.name} engine (ready={ready})",
+    )
     return {"engine": engine.name, "objects": len(objects), "ready": ready}
 
 
 @kopf.timer(GROUP, VERSION, PLURAL, interval=15.0)
-def settle_service(spec, status, name, namespace, patch, logger, **_):
+def settle_service(spec, status, name, namespace, patch, logger, body, **_):
     """Re-check the rendered child and converge ``Ready`` as it comes up."""
     parsed = ElpioServiceSpec.from_cr(dict(spec))
     engine = get_engine()
@@ -99,6 +122,12 @@ def settle_service(spec, status, name, namespace, patch, logger, **_):
     logger.info("ElpioService %s/%s child %s readiness -> %s", namespace, name, kind, ready)
     patch.status["ready"] = ready
     patch.status["conditions"] = _readiness_conditions(status, ready, engine.name)
+    kopf.event(
+        body,
+        type="Normal" if ready else "Warning",
+        reason="Ready" if ready else "Progressing",
+        message=f"{kind} readiness -> {ready}",
+    )
 
 
 @kopf.on.delete(GROUP, VERSION, PLURAL)
