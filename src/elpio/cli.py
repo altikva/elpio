@@ -109,6 +109,68 @@ def services(namespace: str | None) -> None:
     _kubectl(*args)
 
 
+@main.command()
+@click.argument("name")
+@click.option("-n", "--namespace", default="default", help="Service namespace.")
+def status(name: str, namespace: str) -> None:
+    """Show an ElpioService's readiness (ready/engine/url)."""
+    _kubectl(
+        "get",
+        "elpioservice.elpio.io",
+        name,
+        "-n",
+        namespace,
+        "-o",
+        "custom-columns="
+        "NAME:.metadata.name,"
+        "READY:.status.ready,"
+        "ENGINE:.status.engine,"
+        "URL:.status.url",
+    )
+
+
+@main.command()
+@click.argument("name")
+@click.option("-n", "--namespace", default="default", help="Service namespace.")
+@click.option("-f", "--follow", is_flag=True, help="Stream new logs (tail -f).")
+def logs(name: str, namespace: str, follow: bool) -> None:
+    """Tail logs for an ElpioService's pods."""
+    args = [
+        "logs",
+        "-l",
+        f"elpio.io/service={name}",
+        "-n",
+        namespace,
+        "--all-containers",
+    ]
+    if follow:
+        args.append("--follow")
+    _kubectl(*args)
+
+
+@main.command()
+@click.argument("name", required=False)
+@click.option("-n", "--namespace", default="default", help="Service namespace.")
+@click.option(
+    "-f",
+    "--file",
+    "file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Delete the ElpioService(s) defined in this YAML file.",
+)
+def delete(name: str | None, namespace: str, file: str | None) -> None:
+    """Delete an ElpioService by name or from a YAML file."""
+    if file and name:
+        raise click.UsageError("pass either NAME or -f/--file, not both")
+    if file:
+        _kubectl("delete", "-f", file)
+        return
+    if not name:
+        raise click.UsageError("give a service NAME or -f/--file")
+    _kubectl("delete", "elpioservice.elpio.io", name, "-n", namespace)
+
+
 @main.command(
     context_settings={"ignore_unknown_options": True},
     short_help="Run the Elpio operator (kopf) in the foreground.",
