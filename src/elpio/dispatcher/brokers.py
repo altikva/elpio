@@ -15,9 +15,12 @@ backend (a Redis list used as a queue). NATS/RabbitMQ are follow-ups.
 from __future__ import annotations
 
 import json
-from typing import Iterable, List, Optional
+import logging
+from typing import Any, Iterable, List, Optional
 
 from elpio.dispatcher.core import Broker, Message
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryBroker(Broker):
@@ -120,7 +123,18 @@ class RabbitMQBroker(Broker):
 
 
 class NatsBroker(Broker):
-    """A NATS JetStream pull consumer, driven synchronously over a private loop."""
+    """A NATS JetStream pull consumer, driven synchronously over a private loop.
+
+    nats is an async client, but the ``Broker`` interface (and the dispatcher
+    loop that drives it) is synchronous. We bridge the two by owning a private
+    event loop and pumping each coroutine through ``run_until_complete``. That
+    sync-over-async bridge is a deliberate tradeoff: it keeps the broker contract
+    uniform across redis/rabbitmq/nats at the cost of a private loop and the
+    fragility of running one coroutine at a time. The cleaner long-term path is
+    an async dispatcher core that awaits the nats client natively; until then we
+    guard every ``run_until_complete`` so a transient failure (a dropped
+    connection mid-ack, say) logs and is swallowed instead of crashing the loop.
+    """
 
     def __init__(self, address: str, queue: str, dlq: Optional[str] = None) -> None:
         import asyncio
@@ -129,6 +143,7 @@ class NatsBroker(Broker):
 
         url = address if "://" in address else f"nats://{address}"
         self._loop = asyncio.new_event_loop()
+        self._closed = False
         self._nc = self._loop.run_until_complete(nats.connect(servers=[url]))
         self._js = self._nc.jetstream()
         self._subject = queue
@@ -139,11 +154,20 @@ class NatsBroker(Broker):
         self._inflight: dict = {}
         self._seq = 0
 
-    def poll(self) -> Optional[Message]:
+    def _run(self, coro: Any, *, what: str) -> Any:
+        """Drive a coroutine to completion, swallowing transient errors.
+
+        A broken connection during ack/nack/dead_letter/poll must not crash the
+        dispatcher loop; we log and return ``None`` so the caller can carry on.
+        """
         try:
-            msgs = self._loop.run_until_complete(self._sub.fetch(1, timeout=1))
+            return self._loop.run_until_complete(coro)
         except Exception:
+            logger.exception("NatsBroker: %s failed", what)
             return None
+
+    def poll(self) -> Optional[Message]:
+        msgs = self._run(self._sub.fetch(1, timeout=1), what="poll")
         if not msgs:
             return None
         raw = msgs[0]
@@ -155,34 +179,48 @@ class NatsBroker(Broker):
     def ack(self, msg: Message) -> None:
         raw = self._inflight.pop(msg.id, None)
         if raw is not None:
-            self._loop.run_until_complete(raw.ack())
+            self._run(raw.ack(), what="ack")
 
     def nack(self, msg: Message, requeue: bool = True) -> None:
         raw = self._inflight.pop(msg.id, None)
         if raw is not None:
-            self._loop.run_until_complete(raw.nak() if requeue else raw.term())
+            self._run(raw.nak() if requeue else raw.term(), what="nack")
 
     def dead_letter(self, msg: Message) -> None:
-        self._loop.run_until_complete(self._js.publish(self._dlq, json.dumps(msg.body).encode()))
+        self._run(
+            self._js.publish(self._dlq, json.dumps(msg.body).encode()),
+            what="dead_letter publish",
+        )
         raw = self._inflight.pop(msg.id, None)
         if raw is not None:
-            self._loop.run_until_complete(raw.ack())
+            self._run(raw.ack(), what="dead_letter ack")
 
     def close(self) -> None:
-        """Close the NATS connection, then the loop.
+        """Close the NATS connection, then the loop. Idempotent.
 
         Closing the connection first stops the client's background flusher; doing
         it the other way round leaves a coroutine to be GC'd against a closed loop
-        ("Event loop is closed"). Safe to call more than once.
+        ("Event loop is closed"). Safe to call more than once: the ``_closed``
+        guard and ``loop.is_closed()`` check both short-circuit a repeat call.
         """
-        if self._loop.is_closed():
+        if self._closed or self._loop.is_closed():
+            self._closed = True
             return
+        self._closed = True
         try:
             self._loop.run_until_complete(self._nc.close())
         except Exception:
-            pass
+            logger.exception("NatsBroker: close failed")
         finally:
             self._loop.close()
+
+    def __del__(self) -> None:
+        # Best-effort safety net for callers that forget close(). Never raise
+        # from a finalizer — a partially built object may be missing attrs.
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 # Broker registry — keyed by ELPIO_BROKER_TYPE. Each class lazily imports its
