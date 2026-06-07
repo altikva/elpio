@@ -48,6 +48,41 @@ spec:
                       enum: [nats, redis, rabbitmq]
                       default: nats
                     address: { type: string }
+                    tls:
+                      type: object
+                      description: TLS settings for the broker connection.
+                      properties:
+                        enabled: { type: boolean, default: false }
+                        caCert:
+                          type: string
+                          description: >-
+                            Path to a PEM CA bundle mounted into the dispatcher
+                            pod (for example from a Secret).
+                        insecureSkipVerify:
+                          type: boolean
+                          default: false
+                          description: >-
+                            Skip TLS certificate verification. Dev/local only;
+                            leave false in production.
+                    auth:
+                      type: object
+                      description: >-
+                        Broker credentials. Sourced from the environment, never
+                        inline plaintext. The *Env fields name an env var the
+                        dispatcher pod gets from a Secret; passwords are env-only.
+                      properties:
+                        username: { type: string }
+                        usernameEnv:
+                          type: string
+                          description: Env var name holding the username.
+                        passwordEnv:
+                          type: string
+                          description: >-
+                            Env var name holding the password (fed from a Secret).
+                        token: { type: string }
+                        tokenEnv:
+                          type: string
+                          description: Env var name holding an auth token (NATS).
                 queue: { type: string }
                 handlerService:
                   type: string

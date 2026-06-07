@@ -31,9 +31,41 @@ class RetryConfig(BaseModel):
     maxAttempts: int = 3
 
 
+class BrokerTLS(BaseModel):
+    """TLS settings for a broker connection.
+
+    ``caCert`` is a PEM bundle path mounted into the dispatcher pod (for example
+    from a Secret). ``insecureSkipVerify`` disables certificate verification and
+    is meant for local/dev clusters only.
+    """
+
+    enabled: bool = False
+    caCert: Optional[str] = None
+    insecureSkipVerify: bool = False
+
+
+class BrokerAuth(BaseModel):
+    """Broker credentials, sourced from the environment, never inline plaintext.
+
+    Precedence for each value: the ``*Env`` field names an env var read at
+    connect time and wins; the inline literal (``username``/``token``) is a
+    convenience fallback for non-sensitive values. Passwords have no inline
+    field on purpose — they must come from ``passwordEnv`` (an env var the
+    dispatcher pod gets from a Secret).
+    """
+
+    username: Optional[str] = None
+    usernameEnv: Optional[str] = None
+    passwordEnv: Optional[str] = None
+    token: Optional[str] = None
+    tokenEnv: Optional[str] = None
+
+
 class BrokerConfig(BaseModel):
     type: Literal["nats", "redis", "rabbitmq"] = "nats"
     address: str
+    tls: BrokerTLS = Field(default_factory=BrokerTLS)
+    auth: BrokerAuth = Field(default_factory=BrokerAuth)
 
 
 class TaskSpec(BaseModel):

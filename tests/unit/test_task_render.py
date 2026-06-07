@@ -79,3 +79,35 @@ def test_owner_propagates():
     owner = {"apiVersion": "elpio.io/v1alpha1", "kind": "ElpioTask", "name": "t", "uid": "u"}
     objs = render_task("t", "demo", REDIS, owner=owner)
     assert all(o["metadata"]["ownerReferences"] == [owner] for o in objs)
+
+
+def test_broker_auth_and_tls_become_dispatcher_env():
+    spec = TaskSpec.from_cr(
+        {
+            "broker": {
+                "type": "nats",
+                "address": "nats.infra:4222",
+                "auth": {"username": "svc", "passwordEnv": "BROKER_PW", "tokenEnv": "BROKER_TOK"},
+                "tls": {"enabled": True, "caCert": "/etc/ca/ca.pem"},
+            },
+            "queue": "jobs",
+            "handlerService": "worker",
+        }
+    )
+    dep = _by_kind(render_task("jobs", "demo", spec))["Deployment"][0]
+    env = {e["name"]: e["value"] for e in dep["spec"]["template"]["spec"]["containers"][0]["env"]}
+    # Only the *name* of the env var carrying the password flows through, never a
+    # password value: there is no ELPIO_BROKER_PASSWORD with a literal secret.
+    assert env["ELPIO_BROKER_USERNAME"] == "svc"
+    assert env["ELPIO_BROKER_PASSWORD_ENV"] == "BROKER_PW"
+    assert env["ELPIO_BROKER_TOKEN_ENV"] == "BROKER_TOK"
+    assert env["ELPIO_BROKER_TLS"] == "true"
+    assert env["ELPIO_BROKER_TLS_CA"] == "/etc/ca/ca.pem"
+    assert "ELPIO_BROKER_PASSWORD" not in env
+
+
+def test_no_broker_auth_emits_no_auth_env():
+    dep = _by_kind(render_task("emailq", "demo", REDIS))["Deployment"][0]
+    names = {e["name"] for e in dep["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert not any(n.startswith("ELPIO_BROKER_USERNAME") for n in names)
+    assert "ELPIO_BROKER_TLS" not in names
