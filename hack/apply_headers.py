@@ -2,7 +2,7 @@
 # __creation__ = 2026-06-04
 # __author__ = "jndjama (Joy Ndjama)"
 # __copyright__ = "Copyright 2026 ALTIKVA."
-# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
+# __licence__ = "Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Idempotently apply the Altikva license header + a Description
 #              block (from each module's docstring) to every Python file
@@ -18,7 +18,7 @@ import textwrap
 
 BANNER = "# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#"
 AUTHOR = '# __author__ = "jndjama (Joy Ndjama)"'
-LICENCE = '# __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"'
+LICENCE = '# __licence__ = "Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)"'
 PREFIX, CONT = "# Description: ", "#" + " " * 14
 TODAY = datetime.date.today().isoformat()
 
