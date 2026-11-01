@@ -10,9 +10,9 @@
 your own Kubernetes — scale-to-zero, request-driven autoscaling, simplified cluster + node
 autoscaling, and a clean multi-tenant model. GKE-first, **portable by design** (EKS / AKS / k3s).
 
-Elpio is an [Altikva](https://altikva.com) open-source product (MIT for code, CC-BY-4.0 for
-docs). The name is a coined mark rooted in Greek *elpis* ("hope") — part of the Altikva family
-lineage *ha-tikva* (Hebrew) → *Spero* (Latin) → *Elpio*.
+Elpio is an [Altikva](https://altikva.com) open-source product, released under the Apache
+License 2.0. The name is a coined mark rooted in Greek *elpis* ("hope") — part of the Altikva
+family lineage *ha-tikva* (Hebrew) → *Spero* (Latin) → *Elpio*.
 
 > **Status: alpha (v0.1.0).** All four reconcilers ship: `ElpioService` (Knative/KEDA serving),
 > `ElpioFunction` (Tekton + Buildpacks), `ElpioTask` (KEDA + broker), and `ElpioTenant` (namespace,
@@ -165,4 +165,9 @@ docs/          architecture & guides
 
 ## License
 
-Code: [MIT](LICENSE). Docs & branding: [CC-BY-4.0](LICENSE-docs).
+Elpio is released under the [Apache License 2.0](./LICENSE), SPDX `Apache-2.0`.
+See [LICENSE](./LICENSE) and [NOTICE](./NOTICE). The license does not grant rights to the
+Elpio name or marks.
+
+Contributions are accepted under the [Contributor License Agreement](./CLA.md); see
+[CONTRIBUTING](./CONTRIBUTING.md).
