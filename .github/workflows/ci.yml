@@ -15,7 +15,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # The repo is public: a tracked local key (cgh's auth.key) would be
       # published with the next push, so the build fails if one is tracked.
       - name: No local key files tracked
@@ -24,10 +24,10 @@ jobs:
             echo "::error::a local auth.key is tracked; remove it and rotate it"
             exit 1
           fi
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - uses: arduino/setup-task@v2
+      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -41,11 +41,11 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: arduino/setup-task@v2
+      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -55,8 +55,8 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
       - run: helm lint deploy/helm/elpio
       - run: helm template elpio deploy/helm/elpio --namespace elpio-system >/dev/null
 
@@ -76,8 +76,8 @@ jobs:
           --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s
           --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       # NATS needs JetStream (-js), which service containers can't pass; run it directly.
@@ -111,11 +111,11 @@ jobs:
     # control. Keep them reporting without false-reddening the build.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - uses: arduino/setup-task@v2
+      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -123,11 +123,11 @@ jobs:
       # a retry, since kind cluster bring-up flakes intermittently on hosted
       # runners (image pulls, control-plane wait) and we don't want that to red a
       # non-blocking leg. The cluster name ("elpio-dev") comes from the config.
-      - uses: helm/kind-action@v1
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
           install_only: true
       - name: Create the kind cluster (retry on bring-up flake)
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
           timeout_minutes: 8
           max_attempts: 3
