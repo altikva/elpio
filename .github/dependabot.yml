@@ -1,0 +1,25 @@
+# Weekly dependency updates. GitHub Actions are grouped and their majors
+# ignored (a new major is reviewed by hand); Python dependencies go in two
+# groups, dev tooling and runtime, majors included.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python-dev:
+        dependency-type: development
+      python-runtime:
+        dependency-type: production
