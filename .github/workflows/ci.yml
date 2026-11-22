@@ -16,6 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # The repo is public: a tracked local key (cgh's auth.key) would be
+      # published with the next push, so the build fails if one is tracked.
+      - name: No local key files tracked
+        run: |
+          if git ls-files | grep -E '(^|/)auth\.key$'; then
+            echo "::error::a local auth.key is tracked; remove it and rotate it"
+            exit 1
+          fi
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

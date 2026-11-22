@@ -27,8 +27,9 @@ kubeconfig
 # Claude Code project memory (kept local, not tracked)
 CLAUDE.md
 
-# codegraph index
+# codegraph / cgh index (holds a local auth.key; never commit)
 .codegraph/
+.cgh/
 
 # codegraph auth key (never commit)
 .codegraph/auth.key
@@ -38,3 +39,6 @@ CLAUDE.md
 
 # Docs (kept local, not tracked)
 /docs/
+
+# Agent instructions generated locally by cgh
+AGENTS.md
