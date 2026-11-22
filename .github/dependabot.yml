@@ -1,6 +1,6 @@
 # Weekly dependency updates. GitHub Actions are grouped and their majors
 # ignored (a new major is reviewed by hand); Python dependencies go in two
-# groups, dev tooling and runtime, majors included.
+# groups, dev tooling (pytest, ruff) and runtime, majors included.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -18,8 +18,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # elpio's dev tools live in an optional extra, not a dependency group, so
+    # Dependabot sees every Python dependency as production: split by name.
+    # The first matching group wins.
     groups:
       python-dev:
-        dependency-type: development
+        patterns: ["pytest*", "ruff"]
       python-runtime:
-        dependency-type: production
+        patterns: ["*"]
