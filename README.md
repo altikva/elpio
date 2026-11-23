@@ -14,7 +14,7 @@ Elpio is an [Altikva](https://altikva.com) open-source product, released under t
 License 2.0. The name is a coined mark rooted in Greek *elpis* ("hope") — part of the Altikva
 family lineage *ha-tikva* (Hebrew) → *Spero* (Latin) → *Elpio*.
 
-> **Status: alpha (v0.1.0).** All four reconcilers ship: `ElpioService` (Knative/KEDA serving),
+> **Status: alpha (v0.2.0).** All four reconcilers ship: `ElpioService` (Knative/KEDA serving),
 > `ElpioFunction` (Tekton + Buildpacks), `ElpioTask` (KEDA + broker), and `ElpioTenant` (namespace,
 > RBAC, quotas, network isolation). Alongside them: OIDC auth, an admission webhook, a multi-cluster
 > management API, a Helm chart, and CI. The operator emits Prometheus metrics and Kubernetes Events,
