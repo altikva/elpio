@@ -24,6 +24,15 @@ jobs:
             echo "::error::a local auth.key is tracked; remove it and rotate it"
             exit 1
           fi
+      # A tag or branch can be moved to new code; a commit cannot. Every
+      # third-party action, the publishing ones included, is pinned to a SHA.
+      - name: Actions pinned to a commit
+        run: |
+          if grep -nE '^\s*(-\s*)?uses:\s*[^.][^@]*@' .github/workflows/*.yml \
+              | grep -vE '@[0-9a-f]{40}(\s|$)'; then
+            echo "::error::pin every action to a full commit SHA, with its version in a comment"
+            exit 1
+          fi
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
