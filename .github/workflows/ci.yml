@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 # Run Node-based actions on Node 24. Several actions we depend on (azure/setup-helm,
